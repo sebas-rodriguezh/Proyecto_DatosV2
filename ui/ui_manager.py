@@ -84,7 +84,7 @@ class UIManager:
             if self.controls_timer <= 0:
                 self.show_inventory_controls = False
     
-    def draw_sidebar(self, player, active_orders, weather_system, game_time, game_state, pending_count=0):
+    def draw_sidebar(self, player, active_orders, weather_system, game_time, game_state, pending_count=0, cpu_player=None):
         """Dibuja el panel lateral completo """
         cols = self.game_map.width
         sidebar_rect = pygame.Rect(cols * self.game_map.tile_size, 0, 300, self.screen_height)
@@ -106,7 +106,37 @@ class UIManager:
             self.draw_inventory_controls_popup()
         else:
             self.draw_inventory_controls_hint()
+            
+        if cpu_player:
+            self.draw_cpu_status(cols, cpu_player)
 
+    def draw_cpu_status(self, cols, cpu_player):
+        """Dibuja el estado del jugador CPU"""
+        x_offset = cols * self.game_map.tile_size
+        cpu_y_pos = self.screen_height - 120
+        
+        # Título del CPU
+        cpu_title = self.font_medium.render(f"CPU ({cpu_player.difficulty}):", True, (0, 0, 0))
+        self.screen.blit(cpu_title, (x_offset + 10, cpu_y_pos))
+        
+        # Estadísticas
+        stats_text = self.font_small.render(
+            f"Pedidos: {cpu_player.orders_completed} | Ganancia: ${cpu_player.total_earnings}", 
+            True, (0, 0, 0)
+        )
+        self.screen.blit(stats_text, (x_offset + 10, cpu_y_pos + 20))
+        
+        # Estado actual
+        status_text = self.font_small.render(
+            f"Posición: ({cpu_player.grid_x}, {cpu_player.grid_y})", 
+            True, (100, 100, 100)
+        )
+        self.screen.blit(status_text, (x_offset + 10, cpu_y_pos + 35))
+        
+        # Barra de stamina del CPU
+        stamina_text = self.font_small.render(f"Resistencia: {int(cpu_player.stamina)}/100", True, (0, 0, 0))
+        self.screen.blit(stamina_text, (x_offset + 10, cpu_y_pos + 50))
+        self.draw_bar(x_offset + 10, cpu_y_pos + 65, 150, 10, cpu_player.stamina / 100, (200, 0, 0))
 
     
     def draw_inventory_controls_popup(self):

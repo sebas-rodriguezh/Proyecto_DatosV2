@@ -19,11 +19,12 @@ from utils.save_load_manager import SaveLoadManager
 from datetime import timedelta
 from ui.order_popup_manager import OrderPopupManager
 from utils.score_manager import score_manager
+
     
 class GameEngine:
     """Motor principal del juego que coordina todos los sistemas"""
     
-    def __init__(self, load_slot=None):
+    def __init__(self, load_slot=None, cpu_difficulty=None):
         pygame.init()
         try:
             pygame.font.init()
@@ -53,6 +54,10 @@ class GameEngine:
             self.load_game(load_slot)
         else:
             self.setup_game_objects()
+            
+        self.cpu_player = None
+        if cpu_difficulty and cpu_difficulty in ["easy", "medium", "hard"]:
+            self.setup_cpu_player(cpu_difficulty)
         
         self.setup_managers()
         from ui.pause_menu import PauseMenu
@@ -61,6 +66,27 @@ class GameEngine:
         self.running = True
         self.clock = pygame.time.Clock()
         self.last_time = pygame.time.get_ticks()
+        
+
+
+    def setup_cpu_player(self, difficulty):
+        """Configura el jugador CPU"""
+        from cpu_player import CPUPlayer
+        
+        # Posición inicial diferente al jugador humano
+        cpu_x = max(0, self.cols // 2 - 3)
+        cpu_y = max(0, self.rows // 2 - 3)
+        
+        self.cpu_player = CPUPlayer(
+            cpu_x, cpu_y, 
+            self.game_map.tile_size, 
+            self.game_map.legend,
+            difficulty=difficulty
+        )
+        
+        print(f"Jugador CPU inicializado (dificultad: {difficulty}) en posición ({cpu_x}, {cpu_y})")
+        
+
     def setup_game_data(self):
         """Carga datos iniciales de la API o caché local - VERSIÓN SIMPLIFICADA"""
         try:
@@ -657,6 +683,11 @@ class GameEngine:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
+                
+            if event.type == pygame.KEYDOWN:
+                # Tecla D para debug de CPU
+                if event.key == pygame.K_l and self.cpu_player:
+                    self.debug_cpu_status()
             
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 if not self.game_state.game_over:
@@ -787,6 +818,12 @@ class GameEngine:
             
             self.update_player_movement(dt)
             
+            # Actualizar jugador CPU si existe - ESTA ES LA PARTE IMPORTANTE
+            if self.cpu_player:
+                self.cpu_player.update(dt, self.active_orders, self.game_map, 
+                                     self.game_time, self.weather_system)
+                # Las interacciones se manejan dentro de update() de CPUPlayer
+            
             self.interaction_manager.update(dt)
             
             self.update_game_state()
@@ -796,6 +833,7 @@ class GameEngine:
                 self.undo_manager.save_game_state(self)
         
         self.update_camera()
+    
 
 
     def update_player_movement(self, dt):
@@ -976,7 +1014,7 @@ class GameEngine:
             traceback.print_exc()
 
     def render(self):
-        """Renderiza todos los elementos del juego"""
+        """Renderiza todos los elementos del juego - MODIFICADO"""
         self.screen.fill((255, 255, 255))
         
         # Dibujar juego normal
@@ -985,9 +1023,15 @@ class GameEngine:
         self.ui_manager.draw_order_markers(self.active_orders, self.player, self.camera_x, self.camera_y)
         self.player.draw(self.screen, self.camera_x, self.camera_y)
         
+        # Dibujar jugador CPU si existe
+        if self.cpu_player:
+            self.cpu_player.draw(self.screen, self.camera_x, self.camera_y)
+        
         pending_count = len(self.pending_orders)
+        
+        # Pasar el cpu_player al UI manager
         self.ui_manager.draw_sidebar(self.player, self.active_orders, self.weather_system, 
-                                self.game_time, self.game_state, pending_count)
+                                self.game_time, self.game_state, pending_count, self.cpu_player)
         
         self.ui_manager.draw_messages()
         self.ui_manager.draw_interaction_hints(self.player, self.active_orders, self.camera_x, self.camera_y, self.game_map)
@@ -1053,15 +1097,44 @@ class GameEngine:
             self.player.current_weight = calculated_weight
         
         print(f"Verificación completada. {len(all_order_ids)} órdenes únicas encontradas")
+        
+# game_engine.py (agregar método de debug)
+
+    def debug_cpu_status(self):
+        """Muestra estado de debug de la CPU - MEJORADO PARA EDIFICIOS"""
+        if self.cpu_player:
+            print(f"=== DEBUG CPU ===")
+            print(f"Posición CPU: ({self.cpu_player.grid_x}, {self.cpu_player.grid_y})")
+            print(f"Objetivo actual: {self.cpu_player.current_target}")
+            print(f"Camino restante: {len(self.cpu_player.path)} pasos")
+            print(f"Inventario: {len(self.cpu_player.inventory)} pedidos")
+            print(f"Pedidos activos: {len(self.active_orders)}")
+            
+            # Verificar TODOS los pedidos activos con sus posiciones accesibles
+            for i, order in enumerate(self.active_orders):
+                pickup_x, pickup_y = order.pickup
+                accessible_position = self.cpu_player._get_nearest_accessible_position(order.pickup, self.game_map)
+                
+                if accessible_position:
+                    distance = max(abs(self.cpu_player.grid_x - accessible_position[0]), 
+                                abs(self.cpu_player.grid_y - accessible_position[1]))
+                    print(f"Pedido {i}: {order.id}")
+                    print(f"  Pickup edificio: {order.pickup}")
+                    print(f"  Posición accesible: {accessible_position}")
+                    print(f"  Distancia a accesible: {distance}")
+                    
+                    if distance <= 3:
+                        print(f"  -> CERCA! Puede recoger desde aquí")
+
+# Llamar este método periódicamente o con una tecla de debug
 
 if __name__ == "__main__":
     setup_directories()
-    api = APIManager()
-    if api.is_online():
-        print("Conectado a internet - Usando datos en tiempo real")
-    else:
-        print("Modo offline - Usando datos cacheados o por defecto")
     
-    # Iniciar juego
-    game = GameEngine()
+    # Probar con diferentes dificultades:
+    # game = GameEngine()  # Sin CPU
+    #game = GameEngine(cpu_difficulty="easy")    # CPU fácil
+    game = GameEngine(cpu_difficulty="medium")  # CPU medio
+    # game = GameEngine(cpu_difficulty="hard")    # CPU difícil
+    
     game.run()
