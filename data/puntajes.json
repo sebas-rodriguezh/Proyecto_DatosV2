@@ -49,6 +49,18 @@
   },
   {
     "player_name": "Jugador",
+    "score": 450,
+    "earnings": 550,
+    "orders_cancelled": 1,
+    "late_deliveries": 0,
+    "best_streak": 3,
+    "victory": false,
+    "date": "2025-10-29T14:07:57.871260",
+    "game_duration": 660.0419999999999,
+    "final_reputation": 81
+  },
+  {
+    "player_name": "Jugador",
     "score": 390,
     "earnings": 590,
     "orders_cancelled": 2,

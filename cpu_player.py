@@ -3,6 +3,7 @@ import pygame
 import random
 import math
 from collections import deque
+import heapq  # Agregar import para cola de prioridad
 from entities.player import Player
 from entities.order_list import OrderList
 from entities.order import Order
@@ -100,88 +101,143 @@ class CPUPlayer(Player):
             
             if self.current_target:
                 self._generate_random_path(self.current_target, game_map)
-    
+
+
+    def get_interactable_orders(self, orders, game_map, radius=1, game_time=None):
+        """Obtiene órdenes interactuables para la CPU - similar al del jugador humano"""
+        interactable = []
+        
+        if game_time is None:
+            return interactable
+        else:
+            current_time = game_time.get_current_game_time()
+        
+        # Pedidos para RECOGER
+        for order in orders:
+            if (not order.is_expired and 
+                not order.is_completed and 
+                not order.is_in_inventory and
+                not self.inventory.find_by_id(order.id)):
+                
+                if order.check_expiration(current_time):
+                    continue
+                
+                can_pickup = self.is_near_location(order.pickup, include_exact=True, radius=radius)
+                
+                if can_pickup:
+                    distance = max(abs(self.grid_x - order.pickup[0]), 
+                                abs(self.grid_y - order.pickup[1]))
+                    interactable.append({
+                        'order': order,
+                        'action': 'pickup',
+                        'location': order.pickup,
+                        'is_exact': self.is_at_location(order.pickup),
+                        'distance': distance,
+                        'is_building': self.is_building_location(order.pickup, game_map)
+                    })
+        
+        # Pedidos para ENTREGAR
+        for order in self.inventory:
+            if not order.is_completed:
+                if order.check_expiration(current_time):
+                    continue
+                
+                can_dropoff = self.is_near_location(order.dropoff, include_exact=True, radius=radius)
+                
+                if can_dropoff:
+                    distance = max(abs(self.grid_x - order.dropoff[0]), 
+                                abs(self.grid_y - order.dropoff[1]))
+                    interactable.append({
+                        'order': order,
+                        'action': 'dropoff',
+                        'location': order.dropoff,
+                        'is_exact': self.is_at_location(order.dropoff),
+                        'distance': distance,
+                        'is_building': self.is_building_location(order.dropoff, game_map)
+                    })
+        
+        interactable.sort(key=lambda x: (not x['is_exact'], x['distance']))
+        return interactable
+
+
     def _update_medium(self, active_orders, game_map, game_time, weather_system):
-        """IA Medio: Evaluación greedy con horizonte limitado - CON MANEJO DE ERRORES"""
+        """IA Medio: Evaluación greedy con horizonte limitado - MEJORADO"""
         print(f"CPU Medium - Evaluando opciones desde posición ({self.grid_x}, {self.grid_y})...")
         
-        best_score = -float('inf')
-        best_action = None
-        best_order = None
-        best_accessible_position = None
+        # Usar COLA DE PRIORIDAD (heap) para evaluar mejores opciones
+        options = []
         
         current_time = game_time.get_current_game_time()
         
-        try:
-            # Evaluar pedidos disponibles
-            for order in active_orders:
-                if not self.inventory.find_by_id(order.id) and self.can_pickup_order(order):
-                    # Encontrar posición accesible para recoger
-                    accessible_position = self._get_nearest_accessible_position(order.pickup, game_map)
-                    
-                    if accessible_position:
-                        # Calcular distancia a la posición accesible, no al edificio
-                        distance = self._manhattan_distance(self.grid_x, self.grid_y, 
-                                                        accessible_position[0], accessible_position[1])
-                        
-                        # Evaluar con la posición accesible
-                        score = self._evaluate_order_pickup(order, current_time, game_map, weather_system, distance)
-                        print(f"  Pedido {order.id} - Pickup: {order.pickup} -> Accesible: {accessible_position} - Score: {score:.1f}")
-                        
-                        if score > best_score:
-                            best_score = score
-                            best_action = 'pickup'
-                            best_order = order
-                            best_accessible_position = accessible_position
-                    else:
-                        print(f"  Pedido {order.id} - Sin posición accesible para pickup {order.pickup}")
+        # Evaluar secuencias de 2-3 acciones (horizonte limitado)
+        for order in active_orders:
+            if not self.inventory.find_by_id(order.id) and self.can_pickup_order(order):
+                score = self._evaluate_action_sequence(['pickup', 'deliver'], order, current_time, game_map, weather_system)
+                heapq.heappush(options, (-score, 'pickup', order))  # Max-heap usando negativo
+        
+        # Evaluar entregas en inventario
+        for order in self.inventory:
+            score = self._evaluate_single_action('deliver', order, current_time, game_map, weather_system)
+            heapq.heappush(options, (-score, 'deliver', order))
+        
+        # Elegir la mejor opción
+        if options:
+            best_score, best_action, best_order = heapq.heappop(options)
+            best_score = -best_score  # Convertir de vuelta a positivo
             
-            # Evaluar entregas en inventario
-            for order in self.inventory:
-                # Encontrar posición accesible para entregar
-                accessible_position = self._get_nearest_accessible_position(order.dropoff, game_map)
-                
-                if accessible_position:
-                    distance = self._manhattan_distance(self.grid_x, self.grid_y, 
-                                                    accessible_position[0], accessible_position[1])
-                    
-                    score = self._evaluate_order_delivery(order, current_time, game_map, weather_system, distance)
-                    print(f"  Entrega {order.id} - Dropoff: {order.dropoff} -> Accesible: {accessible_position} - Score: {score:.1f}")
-                    
-                    if score > best_score:
-                        best_score = score
-                        best_action = 'deliver'
-                        best_order = order
-                        best_accessible_position = accessible_position
-                else:
-                    print(f"  Entrega {order.id} - Sin posición accesible para dropoff {order.dropoff}")
-            
-            if best_action and best_order and best_accessible_position:
-                self.current_target = best_accessible_position  # Usar la posición accesible, no el edificio
-                
-                if best_action == 'pickup':
-                    print(f"🎯 CPU Medium - Objetivo: Recoger {best_order.id}")
-                    print(f"   Edificio pickup: {best_order.pickup}")
-                    print(f"   Posición accesible: {best_accessible_position}")
-                else:
-                    print(f"🎯 CPU Medium - Objetivo: Entregar {best_order.id}")
-                    print(f"   Edificio dropoff: {best_order.dropoff}")
-                    print(f"   Posición accesible: {best_accessible_position}")
-                
-                # Generar camino a la posición accesible
-                self._generate_direct_path(self.current_target, game_map)
+            if best_action == 'pickup':
+                target_pos = self._get_nearest_accessible_position(best_order.pickup, game_map)
             else:
-                # Movimiento exploratorio
-                print("CPU Medium - Sin objetivos buenos, movimiento exploratorio")
-                self._exploratory_move(game_map)
-                
-        except Exception as e:
-            print(f"❌ Error en _update_medium: {e}")
-            import traceback
-            traceback.print_exc()
-            # En caso de error, hacer movimiento exploratorio
-            self._exploratory_move(game_map)
-    
+                target_pos = self._get_nearest_accessible_position(best_order.dropoff, game_map)
+            
+            if target_pos:
+                self.current_target = target_pos
+                self._generate_direct_path(self.current_target, game_map)
+                print(f"🎯 CPU Medium - Elegido: {best_action} {best_order.id} (score: {best_score:.1f})")
+                return
+        
+        # Movimiento exploratorio si no hay buenas opciones
+        print("CPU Medium - Sin objetivos buenos, movimiento exploratorio")
+        self._exploratory_move(game_map)
+
+    def _evaluate_action_sequence(self, actions, order, current_time, game_map, weather_system):
+        """Evalúa una secuencia de acciones con horizonte limitado - ÁRBOL DE DECISIÓN SIMPLE"""
+        total_score = 0
+        current_pos = (self.grid_x, self.grid_y)
+        
+        for i, action in enumerate(actions):
+            if action == 'pickup':
+                target = order.pickup
+                score_func = self._evaluate_order_pickup
+            else:  # 'deliver'
+                target = order.dropoff
+                score_func = self._evaluate_order_delivery
+            
+            accessible_pos = self._get_nearest_accessible_position(target, game_map)
+            if not accessible_pos:
+                return -float('inf')
+            
+            distance = self._manhattan_distance(current_pos[0], current_pos[1], 
+                                            accessible_pos[0], accessible_pos[1])
+            
+            score = score_func(order, current_time, game_map, weather_system, distance)
+            
+            # Aplicar descuento exponencial para acciones futuras
+            discount_factor = 0.7 ** i
+            total_score += score * discount_factor
+            
+            # Actualizar posición estimada para la siguiente acción
+            current_pos = accessible_pos
+        
+        return total_score
+
+    def _evaluate_single_action(self, action, order, current_time, game_map, weather_system):
+        """Evalúa una acción única"""
+        if action == 'pickup':
+            return self._evaluate_order_pickup(order, current_time, game_map, weather_system)
+        else:  # 'deliver'
+            return self._evaluate_order_delivery(order, current_time, game_map, weather_system)
+
     def _update_hard(self, active_orders, game_map, game_time, weather_system):
         """IA Difícil: Optimización basada en grafos"""
         if self.replan_cooldown <= 0:
@@ -389,43 +445,39 @@ class CPUPlayer(Player):
         self.path = deque(total_path)
     
     def _follow_path(self, dt, game_map, weather_system):
-        """Sigue el camino generado - MEJORADO"""
-        # Verificar si ya llegamos al objetivo actual
-        if self.current_target:
-            target_x, target_y = self.current_target
-            current_distance = max(abs(self.grid_x - target_x), abs(self.grid_y - target_y))
-            
-            if current_distance <= 1:
-                print(f"🎯 CPU está en posición objetivo o adyacente: {self.current_target}")
-                self.path.clear()  # Limpiar camino ya que estamos cerca
+        """Sigue el camino generado con detección de problemas"""
+        if not self.path:
+            return
         
-        if self.path and not self.is_moving and self.move_cooldown <= 0:
-            next_pos = self.path[0]
+        # Verificar si el siguiente paso sigue siendo válido
+        next_pos = self.path[0]
+        if (next_pos[0] < 0 or next_pos[0] >= game_map.width or 
+            next_pos[1] < 0 or next_pos[1] >= game_map.height or
+            game_map.legend.get(game_map.tiles[next_pos[1]][next_pos[0]], {}).get("blocked", False)):
             
-            # Si ya estamos en la siguiente posición, saltarla
-            if (self.grid_x, self.grid_y) == next_pos:
-                self.path.popleft()
-                if not self.path:
-                    return
-                next_pos = self.path[0]
-            
-            dx = next_pos[0] - self.grid_x
-            dy = next_pos[1] - self.grid_y
-            
-            # Normalizar dirección
-            dx = 1 if dx > 0 else -1 if dx < 0 else 0
-            dy = 1 if dy > 0 else -1 if dy < 0 else 0
-            
-            # Obtener multiplicadores para el movimiento
+            print("❌ Camino bloqueado, replanificando...")
+            self.path.clear()
+            if self.current_target:
+                self._generate_direct_path(self.current_target, game_map)
+            return
+        
+        # Movimiento normal
+        next_pos = self.path[0]
+        dx = next_pos[0] - self.grid_x
+        dy = next_pos[1] - self.grid_y
+        
+        # Normalizar dirección
+        dx = 1 if dx > 0 else -1 if dx < 0 else 0
+        dy = 1 if dy > 0 else -1 if dy < 0 else 0
+        
+        if dx != 0 or dy != 0:
             weather_multiplier = weather_system.get_speed_multiplier()
             tile_char = game_map.tiles[self.grid_y][self.grid_x]
             surface_multiplier = game_map.legend.get(tile_char, {}).get("surface_weight", 1.0)
             
-            # Intentar moverse
             if self.try_move(dx, dy, game_map.tiles, weather_multiplier, surface_multiplier):
-                old_pos = (self.grid_x - dx, self.grid_y - dy)  # Posición anterior
                 self.path.popleft()
-                print(f"CPU se movió de {old_pos} a ({self.grid_x}, {self.grid_y})")
+                print(f"CPU se movió a ({self.grid_x}, {self.grid_y})")
     
     def _exploratory_move(self, game_map):
         """Movimiento exploratorio cuando no hay objetivos claros"""
@@ -443,8 +495,74 @@ class CPUPlayer(Player):
                     self._generate_greedy_path(self.current_target, game_map)
                 break
             attempts += 1
-    
-# entities/cpu_player.py (modificaciones específicas)
+
+    def _generate_simple_path(self, target, game_map):
+        """Genera un camino simple cuando BFS falla - MÉTODO NUEVO"""
+        print("⚠️ Usando camino simple como fallback")
+        self.path.clear()
+        
+        start_x, start_y = self.grid_x, self.grid_y
+        target_x, target_y = target
+        
+        current_x, current_y = start_x, start_y
+        
+        # Algoritmo simple de movimiento directo
+        max_steps = 50
+        steps = 0
+        
+        while (current_x, current_y) != (target_x, target_y) and steps < max_steps:
+            # Decidir dirección preferida
+            dx = 0
+            dy = 0
+            
+            if current_x < target_x:
+                dx = 1
+            elif current_x > target_x:
+                dx = -1
+            
+            if current_y < target_y:
+                dy = 1
+            elif current_y > target_y:
+                dy = -1
+            
+            # Priorizar movimiento horizontal primero, luego vertical
+            if dx != 0:
+                new_x, new_y = current_x + dx, current_y
+            else:
+                new_x, new_y = current_x, current_y + dy
+            
+            # Verificar si la nueva posición es válida
+            if (0 <= new_x < game_map.width and 0 <= new_y < game_map.height and
+                not game_map.legend.get(game_map.tiles[new_y][new_x], {}).get("blocked", False)):
+                
+                self.path.append((new_x, new_y))
+                current_x, current_y = new_x, new_y
+            else:
+                # Intentar dirección alternativa
+                if dx != 0 and dy != 0:
+                    # Intentar movimiento vertical en lugar de horizontal
+                    alt_x, alt_y = current_x, current_y + dy
+                    if (0 <= alt_x < game_map.width and 0 <= alt_y < game_map.height and
+                        not game_map.legend.get(game_map.tiles[alt_y][alt_x], {}).get("blocked", False)):
+                        
+                        self.path.append((alt_x, alt_y))
+                        current_x, current_y = alt_x, alt_y
+                    else:
+                        # Intentar movimiento horizontal en lugar de vertical
+                        alt_x, alt_y = current_x + dx, current_y
+                        if (0 <= alt_x < game_map.width and 0 <= alt_y < game_map.height and
+                            not game_map.legend.get(game_map.tiles[alt_y][alt_x], {}).get("blocked", False)):
+                            
+                            self.path.append((alt_x, alt_y))
+                            current_x, current_y = alt_x, alt_y
+                        else:
+                            break  # No hay movimientos posibles
+                else:
+                    break  # No hay movimientos posibles
+            
+            steps += 1
+        
+        print(f"✅ Camino simple generado: {len(self.path)} pasos")
 
     def _handle_auto_interactions(self, active_orders, completed_orders, game_time, game_map):
         """Maneja interacciones automáticas - CORREGIDO PARA EDIFICIOS"""
@@ -556,7 +674,7 @@ class CPUPlayer(Player):
             (building_x + 1, building_y),    # Derecha
             (building_x - 1, building_y),    # Izquierda  
             (building_x, building_y + 1),    # Abajo
-            (building_x, building_y - 1),    # Arriba
+            (building_x, building_y - 1),    # Arriba,
         ]
         
         # Buscar posiciones válidas (no bloqueadas y dentro del mapa)
@@ -625,63 +743,44 @@ class CPUPlayer(Player):
         return None  # No se encontró posición accesible
     
     def _generate_direct_path(self, target, game_map):
-        """Genera un camino directo y eficiente al objetivo - NUEVO MÉTODO"""
+        """Genera un camino válido usando BFS - ESTRUCTURA DE COLA"""
         self.path.clear()
         
-        start_x, start_y = self.grid_x, self.grid_y
-        target_x, target_y = target
+        start = (self.grid_x, self.grid_y)
+        goal = target
         
-        print(f"🔄 Generando camino directo de ({start_x}, {start_y}) a ({target_x}, {target_y})")
+        # Usar BFS para encontrar camino válido
+        queue = deque()  # COLA para BFS
+        queue.append((start, []))  # (posición actual, camino hasta aquí)
+        visited = set()
+        visited.add(start)
         
-        current_x, current_y = start_x, start_y
+        max_iterations = 200
+        iterations = 0
         
-        # Usar algoritmo simple pero efectivo
-        max_steps = 100
-        steps = 0
-        
-        while (current_x, current_y) != (target_x, target_y) and steps < max_steps:
-            # Decidir dirección preferida
-            dx = 0
-            dy = 0
+        while queue and iterations < max_iterations:
+            current_pos, current_path = queue.popleft()
             
-            if current_x < target_x:
-                dx = 1
-            elif current_x > target_x:
-                dx = -1
-            elif current_y < target_y:
-                dy = 1
-            elif current_y > target_y:
-                dy = -1
+            if current_pos == goal:
+                self.path = deque(current_path)
+                print(f"✅ Camino BFS generado: {len(self.path)} pasos")
+                return
             
-            # Intentar movimiento preferido primero
-            new_x, new_y = current_x + dx, current_y + dy
-            
-            if (0 <= new_x < game_map.width and 0 <= new_y < game_map.height and
-                not game_map.legend.get(game_map.tiles[new_y][new_x], {}).get("blocked", False)):
+            # Explorar vecinos en 4 direcciones
+            for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+                neighbor = (current_pos[0] + dx, current_pos[1] + dy)
                 
-                self.path.append((new_x, new_y))
-                current_x, current_y = new_x, new_y
-            else:
-                # Si el movimiento preferido no es posible, intentar alternativas
-                moved = False
-                for alt_dx, alt_dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
-                    if alt_dx == dx and alt_dy == dy:
-                        continue  # Saltar el que ya intentamos
-                        
-                    alt_x, alt_y = current_x + alt_dx, current_y + alt_dy
-                    if (0 <= alt_x < game_map.width and 0 <= alt_y < game_map.height and
-                        not game_map.legend.get(game_map.tiles[alt_y][alt_x], {}).get("blocked", False)):
-                        
-                        self.path.append((alt_x, alt_y))
-                        current_x, current_y = alt_x, alt_y
-                        moved = True
-                        break
-                
-                if not moved:
-                    break  # No hay movimientos posibles
+                # Verificar validez del vecino
+                if (neighbor not in visited and 
+                    0 <= neighbor[0] < game_map.width and 
+                    0 <= neighbor[1] < game_map.height and
+                    not game_map.legend.get(game_map.tiles[neighbor[1]][neighbor[0]], {}).get("blocked", False)):
+                    
+                    visited.add(neighbor)
+                    new_path = current_path + [neighbor]
+                    queue.append((neighbor, new_path))
             
-            steps += 1
+            iterations += 1
         
-        print(f"✅ Camino generado: {len(self.path)} pasos")
-        if self.path:
-            print(f"   Primer paso: {self.path[0]}, Último paso: {self.path[-1]}")
+        # Fallback: camino simple si BFS falla
+        self._generate_simple_path(target, game_map)

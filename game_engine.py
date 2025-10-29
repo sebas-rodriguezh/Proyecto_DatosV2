@@ -168,7 +168,7 @@ class GameEngine:
         self.game_time = GameTime(
             total_duration_min=15,
             game_start_time=game_start_datetime,  # Hora del JSON
-            time_scale=1.0  # ← ESCALA TEMPORAL (Modificar el parámetro si quiere correrlo 1s real = xs juego)
+            time_scale=6.0  # ← ESCALA TEMPORAL (Modificar el parámetro si quiere correrlo 1s real = xs juego)
         )
         self.game_time.start()
 
@@ -1020,7 +1020,7 @@ class GameEngine:
         # Dibujar juego normal
         self.render_map()
         self.weather_system.draw_particles(self.screen, self.camera_x, self.camera_y)
-        self.ui_manager.draw_order_markers(self.active_orders, self.player, self.camera_x, self.camera_y)
+        self.ui_manager.draw_order_markers(self.active_orders, self.player, self.camera_x, self.camera_y, self.cpu_player)
         self.player.draw(self.screen, self.camera_x, self.camera_y)
         
         # Dibujar jugador CPU si existe
@@ -1034,8 +1034,8 @@ class GameEngine:
                                 self.game_time, self.game_state, pending_count, self.cpu_player)
         
         self.ui_manager.draw_messages()
-        self.ui_manager.draw_interaction_hints(self.player, self.active_orders, self.camera_x, self.camera_y, self.game_map)
-        
+        self.ui_manager.draw_interaction_hints(self.player, self.active_orders, self.camera_x, self.camera_y, self.game_map, self.cpu_player)        
+
         if self.game_state.game_over:
             self.ui_manager.draw_game_over_screen(self.game_state)
 
@@ -1134,7 +1134,7 @@ if __name__ == "__main__":
     # Probar con diferentes dificultades:
     # game = GameEngine()  # Sin CPU
     #game = GameEngine(cpu_difficulty="easy")    # CPU fácil
-    game = GameEngine(cpu_difficulty="medium")  # CPU medio
-    # game = GameEngine(cpu_difficulty="hard")    # CPU difícil
+    #game = GameEngine(cpu_difficulty="medium")  # CPU medio
+    game = GameEngine(cpu_difficulty="medium")    # CPU difícil
     
     game.run()

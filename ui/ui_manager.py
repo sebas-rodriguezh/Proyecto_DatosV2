@@ -388,19 +388,25 @@ class UIManager:
             y_pos += 20
     
 
-    def draw_order_markers(self, active_orders, player, camera_x, camera_y):
-        """Dibuja los marcadores de trabajos en el mapa - INCLUYE PEDIDOS EN INVENTARIO"""
-
+    def draw_order_markers(self, active_orders, player, camera_x, camera_y, cpu_player=None):
+        """Dibuja los marcadores de trabajos en el mapa - INCLUYE PEDIDOS EN INVENTARIO DEL JUGADOR Y CPU"""
+        
+        # Dibujar marcadores para pedidos activos (disponibles para recoger)
         for order in active_orders:
             self.draw_single_order_marker(order, player, camera_x, camera_y, False)
         
-
+        # Dibujar marcadores para pedidos en inventario del JUGADOR HUMANO
         for order in player.inventory:
             self.draw_single_order_marker(order, player, camera_x, camera_y, True)
+        
+        # Dibujar marcadores para pedidos en inventario de la CPU (si existe)
+        if cpu_player and hasattr(cpu_player, 'inventory'):
+            for order in cpu_player.inventory:
+                self.draw_single_order_marker(order, cpu_player, camera_x, camera_y, True)
 
     def draw_single_order_marker(self, order, player, camera_x, camera_y, is_in_inventory):
-        """Dibuja los marcadores para una sola orden"""
-        # Usar el color del pedido
+        """Dibuja los marcadores para una sola orden - MISMOS COLORES PARA AMBOS"""
+        # Usar el color del pedido (igual para humano y CPU)
         color = order.color
         
         # Verificar si el pedido está en el inventario
@@ -418,9 +424,10 @@ class UIManager:
                             pickup_y * self.game_map.tile_size + self.game_map.tile_size // 2 - camera_y), 
                             7, 1)
         
+        # Dibujar punto de entrega (SIEMPRE se muestra, tanto para humano como CPU)
         dropoff_x, dropoff_y = order.dropoff
         if in_inventory:
-            
+            # Cuadrado relleno cuando está en inventario (tanto humano como CPU)
             pygame.draw.rect(self.screen, color, 
                         (dropoff_x * self.game_map.tile_size + self.game_map.tile_size // 2 - 5 - camera_x, 
                         dropoff_y * self.game_map.tile_size + self.game_map.tile_size // 2 - 5 - camera_y, 
@@ -430,7 +437,7 @@ class UIManager:
                         dropoff_y * self.game_map.tile_size + self.game_map.tile_size // 2 - 5 - camera_y, 
                         10, 10), 2)  # Borde más grueso
         else:
-            # Normal si no está en inventario
+            # Cuadrado vacío cuando no está en inventario
             pygame.draw.rect(self.screen, color, 
                         (dropoff_x * self.game_map.tile_size + self.game_map.tile_size // 2 - 5 - camera_x, 
                         dropoff_y * self.game_map.tile_size + self.game_map.tile_size // 2 - 5 - camera_y, 
@@ -440,7 +447,7 @@ class UIManager:
                         dropoff_y * self.game_map.tile_size + self.game_map.tile_size // 2 - 5 - camera_y, 
                         10, 10), 1)
         
-
+        # Dibujar línea conectando pickup y dropoff (solo si no está en inventario)
         if not in_inventory:
             pickup_x, pickup_y = order.pickup
             pygame.draw.line(self.screen, color, 
@@ -449,45 +456,69 @@ class UIManager:
                         (dropoff_x * self.game_map.tile_size + self.game_map.tile_size // 2 - camera_x, 
                         dropoff_y * self.game_map.tile_size + self.game_map.tile_size // 2 - camera_y), 
                         2)
+            
 
-    def draw_messages(self):
-        """Dibuja mensajes temporales"""
-        if self.message:
-            msg_surface = self.font_medium.render(self.message, True, (0, 0, 0))
-            self.screen.blit(msg_surface, (10, 10))
-    
     def get_interaction_hint(self, game_map):
         """Obtiene pista de interacción"""
         if hasattr(self, 'interaction_manager'):
             return self.interaction_manager.get_interaction_hint(game_map)
         return ""
 
-    # ui_manager.py - CORREGIR método draw_interaction_hints
-    def draw_interaction_hints(self, player, active_orders, camera_x, camera_y, game_map=None):
-        """Dibuja pistas de interacción cerca del jugador"""
+
+    def draw_messages(self):
+        """Dibuja mensajes temporales"""
+        if self.message:
+            msg_surface = self.font_medium.render(self.message, True, (0, 0, 0))
+            self.screen.blit(msg_surface, (10, 10))
+
+    # ui_manager.py - MÉTODO MODIFICADO
+    def draw_interaction_hints(self, player, active_orders, camera_x, camera_y, game_map=None, cpu_player=None):
+        """Dibuja pistas de interacción para el jugador humano y la CPU"""
         if hasattr(self, 'interaction_manager') and hasattr(self.interaction_manager, 'game_time'):
             game_time = self.interaction_manager.game_time
         else:
             # Fallback si no hay game_time disponible
             return
         
+        # Pistas para el JUGADOR HUMANO
         interactable_orders = player.get_interactable_orders(active_orders, game_map, radius=20, game_time=game_time)
         
-        if interactable_orders:
-            # Mostrar pista para la primera orden interactuable
-            interaction = interactable_orders[0]
+        # Pistas para la CPU (si existe)
+        cpu_interactable_orders = []
+        if cpu_player and hasattr(cpu_player, 'get_interactable_orders'):
+            cpu_interactable_orders = cpu_player.get_interactable_orders(active_orders, game_map, radius=20, game_time=game_time)
+        
+        # Combinar todas las pistas
+        all_interactions = []
+        
+        # Agregar pistas del jugador humano
+        for interaction in interactable_orders:
+            interaction['is_cpu'] = False
+            all_interactions.append(interaction)
+        
+        # Agregar pistas de la CPU
+        for interaction in cpu_interactable_orders:
+            interaction['is_cpu'] = True
+            all_interactions.append(interaction)
+        
+        # Mostrar pistas para todas las interacciones
+        for interaction in all_interactions:
             order_info = interaction['order']
             action = interaction['action']
+            is_cpu = interaction.get('is_cpu', False)
             
             if action == 'pickup':
                 hint_text = f"Recoger {order_info.id}"
             else:  # dropoff
-                hint_text = f"Entregar {order_info.id}"
+                if is_cpu:
+                    hint_text = f"CPU: Entregar {order_info.id}"
+                else:
+                    hint_text = f"Entregar {order_info.id}"
             
+
             # Usar la posición del punto de interacción
             loc_x, loc_y = interaction['location']
             
-
             hint_text_surface = self.font_medium.render(hint_text, True, (0, 0, 0))  # Texto negro
             text_width = hint_text_surface.get_width()
             text_height = hint_text_surface.get_height()
@@ -501,16 +532,25 @@ class UIManager:
                 text_height + padding * 2
             )
             
-            hint_color = order_info.color
-            light_bg_color = (
-                min(255, hint_color[0] + 80),
-                min(255, hint_color[1] + 80),
-                min(255, hint_color[2] + 80)
-            )
+            # Color diferente para CPU vs jugador humano
+            if is_cpu:
+                hint_color = order_info.color
+                light_bg_color = (
+                    min(255, hint_color[0] + 80),
+                    min(255, hint_color[1] + 80),
+                    min(255, hint_color[2] + 80)
+                )
+            else:
+                hint_color = order_info.color
+                light_bg_color = (
+                    min(255, hint_color[0] + 80),
+                    min(255, hint_color[1] + 80),
+                    min(255, hint_color[2] + 80)
+                )
             
-            # Dibujar fondo con color del pedido
+            # Dibujar fondo con color
             pygame.draw.rect(self.screen, light_bg_color, hint_bg, border_radius=5)
-            # Borde del color original
+            # Borde del color
             pygame.draw.rect(self.screen, hint_color, hint_bg, 2, border_radius=5)
             
             # Dibujar texto centrado
@@ -519,7 +559,7 @@ class UIManager:
                 (loc_x * self.game_map.tile_size + self.game_map.tile_size // 2 - camera_x - text_width // 2,
                 loc_y * self.game_map.tile_size + self.game_map.tile_size // 2 - camera_y - 30 + padding)
             )
-    
+        
     def draw_game_over_screen(self, game_state):
         """Dibuja la pantalla de fin de juego"""
         overlay = pygame.Surface((self.screen_width, self.screen_height), pygame.SRCALPHA)
