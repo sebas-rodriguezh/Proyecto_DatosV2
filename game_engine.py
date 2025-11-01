@@ -1137,4 +1137,6 @@ if __name__ == "__main__":
     #game = GameEngine(cpu_difficulty="medium")  # CPU medio
     game = GameEngine(cpu_difficulty="medium")    # CPU difícil
     
+
+    #PRUEBA TEST
     game.run()
