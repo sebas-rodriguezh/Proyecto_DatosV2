@@ -1139,4 +1139,5 @@ if __name__ == "__main__":
     
 
     #PRUEBA TEST
+        #PRUEBA TEST2
     game.run()
