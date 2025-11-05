@@ -162,7 +162,7 @@ class CPUPlayer(Player):
 
     def _update_medium(self, active_orders, game_map, game_time, weather_system):
         """IA Medio: Evaluación greedy con horizonte limitado - MEJORADO"""
-        print(f"CPU Medium - Evaluando opciones desde posición ({self.grid_x}, {self.grid_y})...")
+        #print(f"CPU Medium - Evaluando opciones desde posición ({self.grid_x}, {self.grid_y})...")
         
         # Usar COLA DE PRIORIDAD (heap) para evaluar mejores opciones
         options = []
@@ -193,11 +193,11 @@ class CPUPlayer(Player):
             if target_pos:
                 self.current_target = target_pos
                 self._generate_direct_path(self.current_target, game_map)
-                print(f"🎯 CPU Medium - Elegido: {best_action} {best_order.id} (score: {best_score:.1f})")
+                #print(f"🎯 CPU Medium - Elegido: {best_action} {best_order.id} (score: {best_score:.1f})")
                 return
         
         # Movimiento exploratorio si no hay buenas opciones
-        print("CPU Medium - Sin objetivos buenos, movimiento exploratorio")
+        #print("CPU Medium - Sin objetivos buenos, movimiento exploratorio")
         self._exploratory_move(game_map)
 
     def _evaluate_action_sequence(self, actions, order, current_time, game_map, weather_system):
@@ -552,7 +552,7 @@ class CPUPlayer(Player):
             
             if self.try_move(dx, dy, game_map.tiles, weather_multiplier, surface_multiplier):
                 self.path.popleft()
-                print(f"CPU Medium se movió a ({self.grid_x}, {self.grid_y})")
+                #print(f"CPU Medium se movió a ({self.grid_x}, {self.grid_y})")
     def _exploratory_move(self, game_map):
         """Movimiento exploratorio cuando no hay objetivos claros - MEJORADO"""
         # Para nivel hard, buscar zonas con alta densidad de pedidos
@@ -584,7 +584,7 @@ class CPUPlayer(Player):
             random_y = random.randint(1, game_map.height - 2)
             if not game_map.legend.get(game_map.tiles[random_y][random_x], {}).get("blocked", False):
                 self.current_target = (random_x, random_y)
-                print(f"CPU - Movimiento exploratorio a {self.current_target}")
+                #print(f"CPU - Movimiento exploratorio a {self.current_target}")
                 if self.difficulty == "hard":
                     self._generate_astar_path(self.current_target, game_map)
                 else:
@@ -594,7 +594,7 @@ class CPUPlayer(Player):
 
     def _generate_simple_path(self, target, game_map):
         """Genera un camino simple cuando BFS falla - MÉTODO NUEVO"""
-        print("⚠️ Usando camino simple como fallback")
+        #print("⚠️ Usando camino simple como fallback")
         self.path.clear()
         
         start_x, start_y = self.grid_x, self.grid_y
@@ -658,7 +658,7 @@ class CPUPlayer(Player):
             
             steps += 1
         
-        print(f"✅ Camino simple generado: {len(self.path)} pasos")
+        #print(f"✅ Camino simple generado: {len(self.path)} pasos")
 
     def _handle_auto_interactions(self, active_orders, completed_orders, game_time, game_map):
         """Maneja interacciones automáticas - CORREGIDO PARA EDIFICIOS"""
@@ -676,10 +676,10 @@ class CPUPlayer(Player):
                     distance_to_accessible = max(abs(self.grid_x - accessible_position[0]), 
                                             abs(self.grid_y - accessible_position[1]))
                     
-                    print(f"🔍 Verificando pedido {order.id}")
-                    print(f"   Edificio pickup: {order.pickup}")
-                    print(f"   Posición accesible: {accessible_position}")
-                    print(f"   Distancia a posición accesible: {distance_to_accessible}")
+                    # print(f"🔍 Verificando pedido {order.id}")
+                    # print(f"   Edificio pickup: {order.pickup}")
+                    # print(f"   Posición accesible: {accessible_position}")
+                    # print(f"   Distancia a posición accesible: {distance_to_accessible}")
                     
                     # Permitir recoger desde la posición accesible o adyacente
                     if distance_to_accessible <= 1:
@@ -710,27 +710,28 @@ class CPUPlayer(Player):
                 distance_to_accessible = max(abs(self.grid_x - accessible_position[0]), 
                                         abs(self.grid_y - accessible_position[1]))
                 
-                print(f"🔍 Verificando entrega {order.id}")
-                print(f"   Edificio dropoff: {order.dropoff}")
-                print(f"   Posición accesible: {accessible_position}")
-                print(f"   Distancia a posición accesible: {distance_to_accessible}")
+                # print(f"🔍 Verificando entrega {order.id}")
+                # print(f"   Edificio dropoff: {order.dropoff}")
+                # print(f"   Posición accesible: {accessible_position}")
+                # print(f"   Distancia a posición accesible: {distance_to_accessible}")
                 
                 # Permitir entregar desde la posición accesible o adyacente
                 if distance_to_accessible <= 1:
                     if self.remove_from_inventory(order.id):
                         # Calcular ganancias
-                        earnings = order.payout
                         reputation_change = order.calculate_reputation_change(current_time)
-                        
-                        self.total_earnings += earnings
+                        multiplicador_earnings = order.calculate_payout_modifier(current_time, reputation_change)
+                        earnings = order.payout * multiplicador_earnings
+                        self.total_earnings += order.payout * multiplicador_earnings
                         self.reputation = min(100, max(0, self.reputation + reputation_change))
+                        print("REPUTACION DEL CPU:", self.reputation)
                         
                         order.mark_as_completed()
                         completed_orders.enqueue(order)
                         self.orders_completed += 1
                         
                         print(f"✅ CPU ENTREGÓ pedido: {order.id} (+${earnings})")
-                        print(f"   Desde posición accesible: {accessible_position}")
+                        #print(f"   Desde posición accesible: {accessible_position}")
                         
                         # Limpiar objetivos
                         self.path.clear()
@@ -887,7 +888,7 @@ class CPUPlayer(Player):
             
             if current_pos == goal:
                 self.path = deque(current_path)
-                print(f"✅ Camino BFS generado: {len(self.path)} pasos")
+                #print(f"✅ Camino BFS generado: {len(self.path)} pasos")
                 return
             
             # Explorar vecinos en 4 direcciones

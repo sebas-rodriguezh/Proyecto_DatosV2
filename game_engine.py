@@ -876,60 +876,104 @@ class GameEngine:
         self.camera_x = max(0, min(self.camera_x, self.cols * self.game_map.tile_size - self.screen_width + 300))
         self.camera_y = max(0, min(self.camera_y, self.rows * self.game_map.tile_size - self.screen_height))
     
+
     def update_game_state(self):
-        """Actualiza el estado general del juego - VERSIÓN MEJORADA"""
+        """Actualiza el estado general del juego - VERSIÓN ACTUALIZADA CON CPU"""
         if self.game_state.game_over:
             return
         
+        # 1. Verificar reputación del jugador humano
         if self.player.reputation < 20:
-            print("Fin del juego: Reputación muy baja")
+            print("Fin del juego: Reputación del jugador muy baja")
             self.game_state.set_game_over(False, "Derrota: Reputación muy baja")
             self.save_final_score(False)
             return
         
-        if self.game_time.is_time_up() and self.game_state.total_earnings < self.income_goal:
-            print("Fin del juego: Tiempo agotado")
-            self.game_state.set_game_over(False, "Derrota: Tiempo agotado")
-            self.save_final_score(False)
-            return
+        # 2. Verificar si se alcanzó la meta de ingresos (considerando ambos jugadores)
+        human_earnings = self.game_state.total_earnings
+        cpu_earnings = self.cpu_player.total_earnings if self.cpu_player else 0
         
-        if self.game_state.total_earnings >= self.income_goal:
-            print("Fin del juego: Victoria alcanzada")
-            self.game_state.set_game_over(True, "¡Victoria! Meta alcanzada")
+        if human_earnings >= self.income_goal:
+            print("Fin del juego: Victoria del jugador humano alcanzada")
+            self.game_state.set_game_over(True, "Victoria: Meta alcanzada")
             self.save_final_score(True)
             return
         
-        if self.no_more_available_orders() and self.game_state.total_earnings <= self.income_goal:
-            self.game_state.set_game_over(False, "Derrota: No quedan pedidos y no se alcanzó la meta")
+        # 3. Verificar si el CPU alcanzó la meta primero
+        if self.cpu_player and cpu_earnings >= self.income_goal:
+            print("Fin del juego: CPU alcanzó la meta primero")
+            self.game_state.set_game_over(False, "Derrota: CPU ganó la carrera")
             self.save_final_score(False)
             return
-    
+        
+        # 4. Verificar tiempo agotado
+        if self.game_time.is_time_up():
+            # Determinar ganador por mayor cantidad de ingresos
+            if human_earnings > cpu_earnings:
+                print("Fin del juego: Tiempo agotado - Jugador humano gana")
+                self.game_state.set_game_over(True, "Victoria: Mayor ingresos al tiempo")
+                self.save_final_score(True)
+            elif cpu_earnings > human_earnings:
+                print("Fin del juego: Tiempo agotado - CPU gana")
+                self.game_state.set_game_over(False, "Derrota: CPU tuvo mayor ingresos")
+                self.save_final_score(False)
+            else:
+                # Empate - jugador humano pierde por defecto
+                print("Fin del juego: Tiempo agotado - Empate (CPU gana por defecto)")
+                self.game_state.set_game_over(False, "Derrota: Empate - CPU gana")
+                self.save_final_score(False)
+            return
+        
+        # 5. Verificar si no hay más pedidos disponibles
         if self.no_more_available_orders():
-            print("Fin del juego: No quedan pedidos disponibles")
-            self.game_state.set_game_over(False, "Derrota: No quedan pedidos disponibles")
-            self.save_final_score(False)
+            # Determinar ganador por mayor cantidad de ingresos
+            if human_earnings > cpu_earnings:
+                if human_earnings < self.income_goal:
+                    print("Fin del juego: Sin pedidos - Jugador humano pierde por no alcanzar la meta")
+                    self.game_state.set_game_over(False, "Derrota: No se alcanzó la meta")
+                else:
+                    print("Fin del juego: Sin pedidos - Jugador humano gana")
+                    self.game_state.set_game_over(True, "Victoria: Meta alcanzada")
+
+            elif cpu_earnings > human_earnings:
+                print("Fin del juego: Sin pedidos - CPU gana")
+                self.game_state.set_game_over(False, "Derrota: CPU tuvo mayor ingresos")
+                self.save_final_score(False)
+            else:
+                # Empate - jugador humano pierde por defecto
+                print("Fin del juego: Sin pedidos - Empate (CPU gana por defecto)")
+                self.game_state.set_game_over(False, "Derrota: Empate - CPU gana")
+                self.save_final_score(False)
             return
+
+
   
     def no_more_available_orders(self):
-        """Verifica si no quedan pedidos disponibles para completar - VERSIÓN CORREGIDA"""
+        """Verifica si no quedan pedidos disponibles para completar - VERSIÓN ACTUALIZADA CON CPU"""
         
+        # Verificar pedidos activos y pendientes para ambos jugadores
         no_active_orders = (
             len(self.active_orders) == 0 and 
             len(self.pending_orders) == 0 and 
             len(self.player.inventory) == 0 and
+            (not self.cpu_player or len(self.cpu_player.inventory) == 0) and  # CPU sin inventario
             not self.popup_manager.has_pending_order()
         )
         
         if not no_active_orders:
             return False
         
-
+        # Calcular total de pedidos procesados (incluyendo los del CPU)
         unique_cancellations = max(0, self.game_state.orders_cancelled - len(self.rejected_orders))
+        
+        # Contar pedidos completados por el CPU
+        cpu_completed = self.cpu_player.orders_completed if self.cpu_player else 0
         
         total_processed = (
             len(self.completed_orders) + 
             len(self.rejected_orders) +
-            unique_cancellations  
+            unique_cancellations +
+            cpu_completed  # Pedidos completados por CPU
         )
         
         expired_count = sum(1 for order in self.all_orders if order.is_expired and not order.is_completed)
@@ -938,13 +982,12 @@ class GameEngine:
         all_orders_processed = (total_processed >= len(self.all_orders))
         
         # DEBUG: Para verificar qué está pasando
-        print(f"VERIFICACIÓN FIN DEL JUEGO:")
-        print(f"   - Completados: {len(self.completed_orders)}")
+        print(f"VERIFICACIÓN FIN DEL JUEGO (CON CPU):")
+        print(f"   - Completados jugador: {len(self.completed_orders)}")
+        print(f"   - Completados CPU: {cpu_completed}")
         print(f"   - Rechazados: {len(self.rejected_orders)}")
-        print(f"   - Cancelados (inventario): {self.game_state.orders_cancelled}")
-        print(f"   - Cancelados únicos: {unique_cancellations}")
+        print(f"   - Cancelados: {self.game_state.orders_cancelled}")
         print(f"   - Expirados: {expired_count}")
-        print(f"   - Popup activo: {self.popup_manager.has_pending_order()}")
         print(f"   - Total procesado: {total_processed}")
         print(f"   - Total pedidos: {len(self.all_orders)}")
         print(f"   - ¿Juego debe terminar? {all_orders_processed}")
