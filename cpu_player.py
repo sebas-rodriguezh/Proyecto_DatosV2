@@ -10,7 +10,14 @@ from entities.order import Order
 from core.game_time import GameTime
 
 class CPUPlayer(Player):
-    """Jugador controlado por IA con tres niveles de dificultad"""
+    """
+    Jugador controlado por IA con tres niveles de dificultad
+    Hereda de la clase Player y añade comportamientos automatizados para competir contra el jugador humano. Implementa tres estrategias de inteligencia artificial:
+
+    - FÁCIL: Comportamiento semi-aleatorio con decisiones simples y búsqueda de camino simple.
+    - MEDIO: Evaluación estratégica usando parámetros α, β, γ para optimizar ganancias
+    - DIFÍCIL: Optimización avanzada con algoritmo A* y planificación de rutas óptimas
+    """
     
     def __init__(self, x, y, tile_size, legend, difficulty="easy", scale_factor=1):
         super().__init__(x, y, tile_size, legend, scale_factor)
@@ -25,7 +32,7 @@ class CPUPlayer(Player):
         self.orders_completed = 0
         self.total_earnings = 0
         
-        # Parámetros para nivel medio (α, β, γ) - FALTANTES EN EL CÓDIGO ORIGINAL
+        # Parámetros para nivel medio (α, β, γ)
         self.alpha = 1.0    # Peso del pago esperado
         self.beta = 0.5     # Peso del costo de distancia  
         self.gamma = 0.3    # Peso de penalización por clima
@@ -33,19 +40,20 @@ class CPUPlayer(Player):
         # Para nivel difícil
         self.graph_representation = None
         self.known_obstacles = set()
-        
-        # Color diferente para distinguir del jugador humano
-        self.cpu_color = (255, 0, 0)  # Rojo para la CPU
+        self.cpu_color = (255, 0, 0)
     
     def update(self, dt, active_orders, game_map, game_time, weather_system):
-        """Actualiza el comportamiento de la IA según la dificultad"""
+        """
+        Actualiza el comportamiento de la IA según la dificultad
+        La idea es que este método pueda recibir por parámetro, en base a esto, se actualiza la dificultad de la IA, según el caso seleccionado por el jugador real.
+        """
         # Actualizar movimiento primero
         self.update_movement(dt, weather_system.get_stamina_consumption())
         
         self.decision_cooldown -= dt
         self.replan_cooldown -= dt
         
-        # Solo tomar decisiones si no está en medio de un movimiento
+        # Acá toma la decisión de la IA, es decir se setea el estado en el cuál va a jugar. 
         if not self.is_moving and self.decision_cooldown <= 0:
             if self.difficulty == "easy":
                 self._update_easy(active_orders, game_map)
@@ -56,51 +64,48 @@ class CPUPlayer(Player):
             
             self.decision_cooldown = random.uniform(0.5, 1.5)
         
-        # Ejecutar movimiento si hay un camino
+        # Ejecutar movimiento, si hay camino. 
         self._follow_path(dt, game_map, weather_system)
         
-        # Manejar interacciones automáticamente
+        # Manejar interacciones de manera automática.
         self._handle_auto_interactions(active_orders, self.completed_orders, game_time, game_map)
     
     def _update_easy(self, active_orders, game_map):
-        """IA Fácil: Comportamiento aleatorio usando Random Walk"""
-        #print(f"CPU Easy - Tomando decisión en ({self.grid_x}, {self.grid_y})...")
-        
-        # Primero verificar si hay pedidos que pueda recoger inmediatamente
+        """
+        IA Fácil: Comportamiento aleatorio usando Random Walk
+        La idea es que pueda tener un comportamiento simple, pseudo aleatorio, pero que cuando logre "llegarle" a un pedido, pueda entregarlo.
+        La idea es que el agente no sea inútil o incapaz de entregar pedidos.
+        """
+        # Valida si en el campo que spawmeo, hay pedidos cercanos para recoger.
         for order in active_orders:
-            if (not self.inventory.find_by_id(order.id) and self.can_pickup_order(order)):
+            if (not self.inventory.find_by_id(order.id) and self.can_pickup_order(order)): #Verifica que NO lo tenga en su inventario de IA.
                 pickup_x, pickup_y = order.pickup
                 distance = max(abs(self.grid_x - pickup_x), abs(self.grid_y - pickup_y))
                 
                 # Si está muy cerca, ir por ese pedido
                 if distance <= 2:
                     self.current_target = order.pickup
-                    #print(f"CPU Easy - Pedido cercano: Recoger {order.id} (distancia: {distance})")
-                    self._generate_direct_path(self.current_target, game_map)
+                    self._generate_direct_path(self.current_target, game_map) #Acá es donde se genera la ruta, para que pueda dejar el pedido. 
                     return
         
         if not self.current_target or random.random() < 0.3 or not self.path:
-            # Elegir un objetivo aleatorio
             available_orders = list(active_orders)
             
-            if available_orders and random.random() < 0.8:  # Mayor probabilidad de elegir pedidos
+            if available_orders and random.random() < 0.8:  
                 # Elegir un pedido aleatorio
                 order = random.choice(available_orders)
                 if not self.inventory.find_by_id(order.id) and self.can_pickup_order(order):
                     self.current_target = order.pickup
-                    #print(f"CPU Easy - Objetivo: Recoger {order.id} en {order.pickup}")
                 elif self.inventory.find_by_id(order.id):
                     self.current_target = order.dropoff
-                    #print(f"CPU Easy - Objetivo {order.id} en {order.dropoff}")
             else:
-                # Moverse a una posición aleatoria (Random Walk)
+                # Acá se mueve aleatoriamente. 
                 attempts = 0
                 while attempts < 10:
                     random_x = random.randint(1, game_map.width - 2)
                     random_y = random.randint(1, game_map.height - 2)
                     if not game_map.legend.get(game_map.tiles[random_y][random_x], {}).get("blocked", False):
                         self.current_target = (random_x, random_y)
-                        #print(f"CPU Easy - Objetivo: Moverse a posición aleatoria {self.current_target}")
                         break
                     attempts += 1
             
@@ -108,82 +113,92 @@ class CPUPlayer(Player):
                 self._generate_direct_path(self.current_target, game_map)
 
     def _update_medium(self, active_orders, game_map, game_time, weather_system):
-        """IA Medio: Evaluación greedy con función heurística usando α, β, γ"""
-        # Usar COLA DE PRIORIDAD (heap) para evaluar mejores opciones
-        options = []
+        """
+        IA Medio: Evaluación greedy con función heurística usando α, β, γ
+        Usamos el greedy por conveniencia, además utilizamos parametros α, β, γ para ponderar distintos aspectos de la evaluación.
+        """
+        # Usamos cola de prioridad (heap) 
+        options = [] #Almacena mejores opciones. 
         
         current_time = game_time.get_current_game_time()
         
-        # Evaluar secuencias de 2-3 acciones (horizonte limitado)
+        # Evaluar secuencias de 2-3 acciones.
         for order in active_orders:
             if not self.inventory.find_by_id(order.id) and self.can_pickup_order(order):
                 score = self._evaluate_action_sequence(['pickup', 'deliver'], order, current_time, game_map, weather_system)
                 heapq.heappush(options, (-score, 'pickup', order))  # Max-heap usando negativo
         
-        # Evaluar entregas en inventario
         for order in self.inventory:
-            score = self._evaluate_single_action('deliver', order, current_time, game_map, weather_system)
+            score = self._evaluate_single_action('deliver', order, current_time, game_map, weather_system) #Acá es donde se evaluan las acciones (Prioriza).
             heapq.heappush(options, (-score, 'deliver', order))
         
         # Elegir la mejor opción
         if options:
             best_score, best_action, best_order = heapq.heappop(options)
-            best_score = -best_score  # Convertir de vuelta a positivo
+            best_score = -best_score  # Convertir de vuelta a positivo (Para que seleccione la mejor y no la menor).
             
             if best_action == 'pickup':
-                target_pos = self._get_nearest_accessible_position(best_order.pickup, game_map)
+                target_pos = self._get_nearest_accessible_position(best_order.pickup, game_map) #Este método es para la posición accesible y evitar obstáculos (builds).
             else:
                 target_pos = self._get_nearest_accessible_position(best_order.dropoff, game_map)
             
             if target_pos:
                 self.current_target = target_pos
-                self._generate_direct_path(self.current_target, game_map)
-                #print(f"🎯 CPU Medium - Elegido: {best_action} {best_order.id} (score: {best_score:.1f})")
+                self._generate_direct_path(self.current_target, game_map) #Crea el camino. 
                 return
-        
-        # Movimiento exploratorio si no hay buenas opciones
-        #self._exploratory_move(game_map)
+            
+        self._exploratory_move(game_map)  # Movimiento exploratorio si no hay mejores opciones
+
 
     def _evaluate_action_sequence(self, actions, order, current_time, game_map, weather_system):
-        """Evalúa una secuencia de acciones con horizonte limitado - CON α, β, γ"""
+        """
+        Evalúa una secuencia de acciones con horizonte limitado - CON α, β, γ
+        Este método solo usa el nivel medio. Para cumplir con lo del score y la evaluación de múltiples acciones.
+        """
         total_score = 0
         current_pos = (self.grid_x, self.grid_y)
         
         for i, action in enumerate(actions):
             if action == 'pickup':
                 target = order.pickup
-                score_func = self._evaluate_order_pickup
-            else:  # 'deliver'
+                score_func = self._evaluate_order_pickup #Para evaluar si vale la pena recoger el pedido. Es formula. 
+            else:  # Entrega
                 target = order.dropoff
-                score_func = self._evaluate_order_delivery
+                score_func = self._evaluate_order_delivery #Para distancia entre entrega. Es formula. 
             
             accessible_pos = self._get_nearest_accessible_position(target, game_map)
             if not accessible_pos:
-                return -float('inf')
+                return -float('inf') #Devuelve menos infinito si no es accesible.
             
             distance = self._manhattan_distance(current_pos[0], current_pos[1], 
-                                            accessible_pos[0], accessible_pos[1])
+                                            accessible_pos[0], accessible_pos[1]) #Calcula distancia entre puntos.
             
             score = score_func(order, current_time, game_map, weather_system, distance)
             
-            # Aplicar descuento exponencial para acciones futuras
+            # Factores para importancia.
             discount_factor = 0.7 ** i
             total_score += score * discount_factor
             
-            # Actualizar posición estimada para la siguiente acción
+            # Empieza donde termino. 
             current_pos = accessible_pos
         
         return total_score
 
     def _evaluate_single_action(self, action, order, current_time, game_map, weather_system):
-        """Evalúa una acción única"""
+        """
+        Evalúa una acción única
+        Es como un puente para evaluar a donde irse. 
+        """
         if action == 'pickup':
             return self._evaluate_order_pickup(order, current_time, game_map, weather_system)
-        else:  # 'deliver'
+        else:  
             return self._evaluate_order_delivery(order, current_time, game_map, weather_system)
 
     def _evaluate_order_pickup(self, order, current_time, game_map, weather_system, distance=None):
-        """Función de evaluación para recoger pedidos - CON α, β, γ"""
+        """
+        Función de evaluación para recoger pedidos - CON α, β, γ
+        En resumen lo que hace es evaluar si vale la pena o no recoger un pedido, en base a la fórmula con α, β, γ, pero en base a un score.
+        """
         # Calcular distancia a la posición accesible
         accessible_position = self._get_nearest_accessible_position(order.pickup, game_map)
         if not accessible_position:
@@ -191,9 +206,9 @@ class CPUPlayer(Player):
         
         if distance is None:
             distance = self._manhattan_distance(self.grid_x, self.grid_y, 
-                                            accessible_position[0], accessible_position[1])
+                                            accessible_position[0], accessible_position[1]) #Distancia
         
-        time_remaining = order.get_time_remaining(current_time)
+        time_remaining = order.get_time_remaining(current_time) #Usamos el tiempo para también que sea parametro en el score. 
         
         if time_remaining <= 0:
             return -float('inf')
@@ -208,10 +223,10 @@ class CPUPlayer(Player):
         
         total_dist = distance + delivery_distance
         
-        # Factor de tiempo (penalización por poco tiempo)
+        # Factor de tiempo.
         time_factor = min(1.0, time_remaining / 300)
         
-        # APLICAR FÓRMULA CON α, β, γ
+        # Acá se aplica la formula del enunciado α, β, γ
         expected_payout = order.payout
         distance_cost = total_dist * 2
         weather_penalty = (1.0 - weather_system.get_speed_multiplier()) * 50
@@ -220,17 +235,20 @@ class CPUPlayer(Player):
                      self.beta * distance_cost - 
                      self.gamma * weather_penalty)
         
-        # Bonus adicionales
+        # Adicionales para hacerlo más realista.
         priority_bonus = order.priority * 50
         time_bonus = time_factor * 100
         
         score = base_score + priority_bonus + time_bonus
         
-        return score
+        return score 
 
     def _evaluate_order_delivery(self, order, current_time, game_map, weather_system, distance=None):
-        """Función de evaluación para entregar pedidos - CON α, β, γ"""
-        # Calcular distancia a la posición accesible
+        """
+        Función de evaluación para entregar pedidos - CON α, β, γ
+        La misma idea que el método anterior, solo que este evalúa que tan viable es hacer la entrega. 
+        """
+
         accessible_position = self._get_nearest_accessible_position(order.dropoff, game_map)
         if not accessible_position:
             return -float('inf')
@@ -244,8 +262,7 @@ class CPUPlayer(Player):
         if time_remaining <= 0:
             return -float('inf')
         
-        # APLICAR FÓRMULA CON α, β, γ
-        expected_payout = order.payout * 1.2  # Bonus por entrega
+        expected_payout = order.payout * 1.2 
         distance_cost = distance * 1.5
         weather_penalty = (1.0 - weather_system.get_speed_multiplier()) * 50
         
@@ -253,7 +270,6 @@ class CPUPlayer(Player):
                      self.beta * distance_cost - 
                      self.gamma * weather_penalty)
         
-        # Bonus adicionales
         priority_bonus = order.priority * 75
         time_bonus = min(200, (time_remaining / 60) * 50)
         
@@ -262,16 +278,22 @@ class CPUPlayer(Player):
         return score
 
     def _update_hard(self, active_orders, game_map, game_time, weather_system):
-        """IA Difícil: Optimización basada en grafos"""
+        """
+        IA Difícil: Optimización basada en grafos
+        Hacemos uso del A* (Astar), para que el agente sea más inteligente en sus movimientos y pueda planificar mejor sus rutas.
+        La idea es que la IA pueda tomar mejores decisiones que los casos anteriores. 
+        """
+
+        # Replanificar ruta si es necesario
         if self.replan_cooldown <= 0:
-            #print("CPU Hard - Replanificando ruta óptima...")
-            self._plan_optimal_route(active_orders, game_map, game_time, weather_system)
+            self._plan_optimal_route(active_orders, game_map, game_time, weather_system) #Rutas y exploración. 
             self.replan_cooldown = 3.0
         
         # Si no hay camino, generar uno
         if not self.path and self.current_target:
-            self._generate_astar_path(self.current_target, game_map)
+            self._generate_astar_path(self.current_target, game_map) #Usamos el camino A*
     
+
     def _plan_optimal_route(self, active_orders, game_map, game_time, weather_system):
         """Planificación de ruta óptima (nivel difícil)"""
         if not active_orders and self.inventory.is_empty():
@@ -285,7 +307,7 @@ class CPUPlayer(Player):
         # Evaluar pedidos para recoger
         for order in active_orders:
             if not self.inventory.find_by_id(order.id) and self.can_pickup_order(order):
-                score = self._evaluate_with_graph_distance(order, current_time, game_map, weather_system, 'pickup')
+                score = self._evaluate_with_graph_distance(order, current_time, game_map, weather_system, 'pickup') #Usa grafo para calculos de distancia. 
                 
                 if score > best_score:
                     best_score = score
@@ -308,15 +330,18 @@ class CPUPlayer(Player):
             
             if target_pos:
                 self.current_target = target_pos
-                self._generate_astar_path(self.current_target, game_map)
-                #print(f"🎯 CPU Hard - Elegido: {action_type} {order.id} (score: {best_score:.1f})")
+                self._generate_astar_path(self.current_target, game_map) #Genera camino A*
                 return
         
-        # Fallback: movimiento exploratorio
-        self._exploratory_move(game_map)
+        self._exploratory_move(game_map) #Se mueve "exporatoriamente" si no hay mejores opciones.
 
     def _evaluate_with_graph_distance(self, order, current_time, game_map, weather_system, action_type):
-        """Evaluación usando distancias reales del grafo"""
+        """
+        Evaluación usando distancias reales del grafo
+        Traduce el mapa en un grafo para calcular distancias reales y mejorar la evaluación de acciones.
+        Este mecanismo se apoya en el A* para calcular distancias reales.
+        """
+
         if action_type == 'pickup':
             target = order.pickup
             base_payout = order.payout
@@ -328,16 +353,17 @@ class CPUPlayer(Player):
         if not accessible_position:
             return -float('inf')
         
-        # Usar distancia real del grafo en lugar de Manhattan
+        # Usa distancia real usando A*
         real_distance = self._a_star_distance((self.grid_x, self.grid_y), accessible_position, game_map)
         if real_distance == float('inf'):
             return -float('inf')
         
+        # Tiempo estimado necesario para llegar, afectado por clima
         time_remaining = order.get_time_remaining(current_time)
         if time_remaining <= 0:
             return -float('inf')
         
-        # Considerar clima en la evaluación
+        # Considerar clima 
         weather_multiplier = weather_system.get_speed_multiplier()
         time_cost = real_distance * 10 / weather_multiplier
         
@@ -351,10 +377,11 @@ class CPUPlayer(Player):
         
         return score
 
-    # MANTENER TODAS LAS FUNCIONES DE MOVIMIENTO Y PATHFINDING ORIGINALES
-
     def get_interactable_orders(self, orders, game_map, radius=1, game_time=None):
-        """Obtiene órdenes interactuables para la CPU - similar al del jugador humano"""
+        """
+        Obtiene órdenes interactuables para la CPU - similar al del jugador humano
+        Detecta qué pedidos pueden ser recogidos o entregados en ese momento basado en la posición actual.
+        """
         interactable = []
         
         if game_time is None:
@@ -362,7 +389,7 @@ class CPUPlayer(Player):
         else:
             current_time = game_time.get_current_game_time()
         
-        # Pedidos para RECOGER
+        # Pedidos para recoger
         for order in orders:
             if (not order.is_expired and 
                 not order.is_completed and 
@@ -386,7 +413,7 @@ class CPUPlayer(Player):
                         'is_building': self.is_building_location(order.pickup, game_map)
                     })
         
-        # Pedidos para ENTREGAR
+        # Pedidos para entregar
         for order in self.inventory:
             if not order.is_completed:
                 if order.check_expiration(current_time):
@@ -410,32 +437,36 @@ class CPUPlayer(Player):
         return interactable
 
     def _generate_astar_path(self, target, game_map):
-        """Genera camino usando algoritmo A* (nivel difícil)"""
-        self.path.clear()
+        """
+        Genera camino usando algoritmo A* (nivel difícil)
+        sta función implementa A* para generar y guardar en self.path el camino desde la posición actual hasta target en el grid del juego.
+        """
+        self.path.clear() #Limpia el camino previo.
         
-        start = (self.grid_x, self.grid_y)
+        start = (self.grid_x, self.grid_y) #Origen / destino.
         goal = target
         
         # Implementación completa de A*
-        open_set = []
-        heapq.heappush(open_set, (0, start))
+
+        open_set = [] #Tupla de prioridad
+        heapq.heappush(open_set, (0, start)) #El heap asegura que siempre se extraiga el nodo con menor f.score
         came_from = {}
         
         g_score = {start: 0}
         f_score = {start: self._manhattan_distance(start[0], start[1], goal[0], goal[1])}
         
+        #Saca el menor f.score
         while open_set:
             current = heapq.heappop(open_set)[1]
             
             if current == goal:
-                self._reconstruct_path(came_from, current)
-                #print(f"✓ Camino A* generado: {len(self.path)} pasos")
+                self._reconstruct_path(came_from, current) #Si llega al objetivo, reconstruye el camino.
                 return
             
             for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
                 neighbor = (current[0] + dx, current[1] + dy)
                 
-                # Verificar validez del vecino
+                # Verifica validez del vecino
                 if not (0 <= neighbor[0] < game_map.width and 0 <= neighbor[1] < game_map.height):
                     continue
                 
@@ -445,6 +476,7 @@ class CPUPlayer(Player):
                 # Coste del movimiento
                 tentative_g_score = g_score[current] + 1
                 
+                #Cuando upd el camino, como priorizar exploración y donde buscar a continuación. 
                 if tentative_g_score < g_score.get(neighbor, float('inf')):
                     came_from[neighbor] = current
                     g_score[neighbor] = tentative_g_score
@@ -453,25 +485,31 @@ class CPUPlayer(Player):
                     if neighbor not in [item[1] for item in open_set]:
                         heapq.heappush(open_set, (f_score[neighbor], neighbor))
         
-        # Si A* falla, usar camino simple como fallback
+        # Si A* falla, usar camino simple.
         self._generate_simple_path(target, game_map)
 
     def _generate_direct_path(self, target, game_map):
-        """Genera un camino válido usando BFS"""
+        """
+        Genera un camino válido usando BFS
+        Encuentra camino más corto en pasos, pero explora mucho más el área que el de A*.
+        Este es utilizado por la dificultad medium para generar caminos directos.
+        Las rutas que tome el medium dependen de este path generado. 
+        """
         self.path.clear()
         
-        start = (self.grid_x, self.grid_y)
-        goal = target
+        start = (self.grid_x, self.grid_y) #Inicia
+        goal = target #Llega
         
-        # Usar BFS para encontrar camino válido
-        queue = deque()
-        queue.append((start, []))
-        visited = set()
-        visited.add(start)
+        queue = deque() #Cola porque como es BFS.
+        queue.append((start, [])) #Agrega tupla con (posición_inicial, camino_vacío)
+        visited = set() #Evita revisitar nodos.
+        visited.add(start) #Marcarla como visitada.
         
-        max_iterations = 200
+        max_iterations = 200 #Máximo de pasos, aunque casi nunca llega ahí. 
         iterations = 0
         
+
+        #Mientras haya nodos por revsar, sacamos el más antiguo, evaluamos con posición actual y por último lista de pasos para llegar ahí. 
         while queue and iterations < max_iterations:
             current_pos, current_path = queue.popleft()
             
@@ -483,7 +521,6 @@ class CPUPlayer(Player):
             for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
                 neighbor = (current_pos[0] + dx, current_pos[1] + dy)
                 
-                # Verificar validez del vecino
                 if (neighbor not in visited and 
                     0 <= neighbor[0] < game_map.width and 
                     0 <= neighbor[1] < game_map.height and
@@ -495,71 +532,76 @@ class CPUPlayer(Player):
             
             iterations += 1
         
-        # Fallback: camino simple si BFS falla
+        # Si fallamos BFS, usar camino simple.
         self._generate_simple_path(target, game_map)
 
     def _generate_simple_path(self, target, game_map):
-        """Genera un camino simple cuando BFS falla"""
-        self.path.clear()
-        
-        start_x, start_y = self.grid_x, self.grid_y
-        target_x, target_y = target
-        
-        current_x, current_y = start_x, start_y
-        max_steps = 50
-        steps = 0
-        
-        while (current_x, current_y) != (target_x, target_y) and steps < max_steps:
-            dx = 0
-            dy = 0
+            """
+            Genera un camino simple moviéndose directamente hacia el objetivo.
+
+            Complejidad: O(1)
+            """
+            self.path.clear()
             
-            if current_x < target_x:
-                dx = 1
-            elif current_x > target_x:
-                dx = -1
+            start_x, start_y = self.grid_x, self.grid_y
+            target_x, target_y = target
             
-            if current_y < target_y:
-                dy = 1
-            elif current_y > target_y:
-                dy = -1
+            current_x, current_y = start_x, start_y
+            max_steps = 50
+            steps = 0
             
-            # Priorizar movimiento horizontal primero, luego vertical
-            if dx != 0:
-                new_x, new_y = current_x + dx, current_y
-            else:
-                new_x, new_y = current_x, current_y + dy
-            
-            # Verificar si la nueva posición es válida
-            if (0 <= new_x < game_map.width and 0 <= new_y < game_map.height and
-                not game_map.legend.get(game_map.tiles[new_y][new_x], {}).get("blocked", False)):
+            while (current_x, current_y) != (target_x, target_y) and steps < max_steps:
+                dx = 0
+                dy = 0
                 
-                self.path.append((new_x, new_y))
-                current_x, current_y = new_x, new_y
-            else:
-                # Intentar dirección alternativa
-                if dx != 0 and dy != 0:
-                    alt_x, alt_y = current_x, current_y + dy
-                    if (0 <= alt_x < game_map.width and 0 <= alt_y < game_map.height and
-                        not game_map.legend.get(game_map.tiles[alt_y][alt_x], {}).get("blocked", False)):
-                        
-                        self.path.append((alt_x, alt_y))
-                        current_x, current_y = alt_x, alt_y
-                    else:
-                        alt_x, alt_y = current_x + dx, current_y
+                if current_x < target_x:
+                    dx = 1
+                elif current_x > target_x:
+                    dx = -1
+                
+                if current_y < target_y:
+                    dy = 1
+                elif current_y > target_y:
+                    dy = -1
+                
+                if dx != 0:
+                    new_x, new_y = current_x + dx, current_y
+                else:
+                    new_x, new_y = current_x, current_y + dy
+                
+                if (0 <= new_x < game_map.width and 0 <= new_y < game_map.height and
+                    not game_map.legend.get(game_map.tiles[new_y][new_x], {}).get("blocked", False)):
+                    
+                    self.path.append((new_x, new_y))
+                    current_x, current_y = new_x, new_y
+                else:
+                    if dx != 0 and dy != 0:
+                        alt_x, alt_y = current_x, current_y + dy
                         if (0 <= alt_x < game_map.width and 0 <= alt_y < game_map.height and
                             not game_map.legend.get(game_map.tiles[alt_y][alt_x], {}).get("blocked", False)):
                             
                             self.path.append((alt_x, alt_y))
                             current_x, current_y = alt_x, alt_y
                         else:
-                            break
-                else:
-                    break
-            
-            steps += 1
+                            alt_x, alt_y = current_x + dx, current_y
+                            if (0 <= alt_x < game_map.width and 0 <= alt_y < game_map.height and
+                                not game_map.legend.get(game_map.tiles[alt_y][alt_x], {}).get("blocked", False)):
+                                
+                                self.path.append((alt_x, alt_y))
+                                current_x, current_y = alt_x, alt_y
+                            else:
+                                break
+                    else:
+                        break
+                
+                steps += 1
 
     def _follow_path(self, dt, game_map, weather_system):
-        """Sigue el camino generado - VERSIÓN MEJORADA"""
+        """
+        Sigue el camino generado hacia el objetivo.
+        
+        Complejidad: O(1) para fácil, O(n) para medio donde n = largo del camino
+        """
         if self.difficulty == "medium":
             self._follow_path_improved(dt, game_map, weather_system)
         else:
@@ -570,6 +612,7 @@ class CPUPlayer(Player):
             dx = next_pos[0] - self.grid_x
             dy = next_pos[1] - self.grid_y
             
+            # Convierte diferencia a dirección (-1, 0, 1)
             dx = 1 if dx > 0 else -1 if dx < 0 else 0
             dy = 1 if dy > 0 else -1 if dy < 0 else 0
             
@@ -582,11 +625,15 @@ class CPUPlayer(Player):
                     self.path.popleft()
 
     def _follow_path_improved(self, dt, game_map, weather_system):
-        """Seguimiento de camino MEJORADO para dificultad medium"""
+        """
+        Versión mejorada para nivel medio que verifica si el camino sigue siendo válido.
+        
+        Complejidad: O(n) donde n = largo del camino
+        """
         if not self.path:
             return
         
-        # VERIFICACIÓN COMPLETA del camino restante
+        # Verifica si hay obstáculos en el camino
         invalid_index = -1
         for i, pos in enumerate(self.path):
             if (pos[0] < 0 or pos[0] >= game_map.width or 
@@ -595,7 +642,6 @@ class CPUPlayer(Player):
                 invalid_index = i
                 break
         
-        # Si hay obstáculos en el camino, replanificar
         if invalid_index != -1:
             self.path.clear()
             accessible_target = self._get_nearest_accessible_position(self.current_target, game_map)
@@ -606,7 +652,6 @@ class CPUPlayer(Player):
                 self._smart_exploratory_move(game_map)
             return
         
-        # Movimiento normal
         next_pos = self.path[0]
         dx = next_pos[0] - self.grid_x
         dy = next_pos[1] - self.grid_y
@@ -623,10 +668,15 @@ class CPUPlayer(Player):
                 self.path.popleft()
 
     def _smart_exploratory_move(self, game_map):
-        """Movimiento exploratorio INTELIGENTE para evitar obstáculos"""
+        """
+        Movimiento inteligente para evitar obstáculos cuando el camino está bloqueado.
+        
+        Complejidad: O(1)
+        """
         directions = [(1, 0), (-1, 0), (0, 1), (0, -1)]
         valid_directions = []
         
+        # Encuentra direcciones válidas
         for dx, dy in directions:
             new_x, new_y = self.grid_x + dx, self.grid_y + dy
             if (0 <= new_x < game_map.width and 0 <= new_y < game_map.height and
@@ -635,6 +685,7 @@ class CPUPlayer(Player):
         
         if valid_directions:
             dx, dy = random.choice(valid_directions)
+            # Establece objetivo 3 casillas en dirección elegida
             self.current_target = (self.grid_x + dx * 3, self.grid_y + dy * 3)
             self.current_target = (
                 max(1, min(self.current_target[0], game_map.width - 2)),
@@ -643,14 +694,19 @@ class CPUPlayer(Player):
             self._generate_direct_path(self.current_target, game_map)
 
     def _exploratory_move(self, game_map):
-        """Movimiento exploratorio cuando no hay objetivos claros"""
-        # Para nivel hard, buscar zonas con alta densidad de pedidos
+        """
+        Movimiento de exploración cuando no hay objetivos claros.
+        
+        Complejidad: O(n) donde n = número de pedidos activos
+        """
+        # Para nivel difícil, busca centro de pedidos activos
         if self.difficulty == "hard" and hasattr(self, 'active_orders') and len(self.active_orders) > 0:
             pickup_positions = [order.pickup for order in self.active_orders]
             if pickup_positions:
                 center_x = sum(pos[0] for pos in pickup_positions) // len(pickup_positions)
                 center_y = sum(pos[1] for pos in pickup_positions) // len(pickup_positions)
                 
+                # Busca posición válida alrededor del centro
                 for radius in range(1, 6):
                     for dx in range(-radius, radius + 1):
                         for dy in range(-radius, radius + 1):
@@ -678,10 +734,14 @@ class CPUPlayer(Player):
             attempts += 1
 
     def _handle_auto_interactions(self, active_orders, completed_orders, game_time, game_map):
-        """Maneja interacciones automáticas - CORREGIDO PARA EDIFICIOS"""
+        """
+        Maneja las interacciones automáticas: recoger y entregar pedidos.
+        
+        Complejidad: O(m + n) donde m = pedidos activos, n = pedidos en inventario
+        """
         current_time = game_time.get_current_game_time()
         
-        # Verificar recogida de pedidos
+        # Verifica recogida de pedidos
         for order in list(active_orders):
             if (not order.is_expired and not order.is_completed and 
                 not order.is_in_inventory and not self.inventory.find_by_id(order.id)):
@@ -692,14 +752,15 @@ class CPUPlayer(Player):
                     distance_to_accessible = max(abs(self.grid_x - accessible_position[0]), 
                                             abs(self.grid_y - accessible_position[1]))
                     
+                    # Si está cerca del punto de recogida
                     if distance_to_accessible <= 1:
                         if self.can_pickup_order(order):
                             if self.add_to_inventory(order):
                                 order.mark_as_picked_up()
                                 order.mark_as_accepted(current_time)
                                 active_orders.remove_by_id(order.id)
-                                #print(f"✅ CPU RECOGIÓ pedido: {order.id}")
                                 
+                                # Establece entrega como nuevo objetivo
                                 dropoff_accessible = self._get_nearest_accessible_position(order.dropoff, game_map)
                                 if dropoff_accessible:
                                     self.current_target = dropoff_accessible
@@ -707,7 +768,7 @@ class CPUPlayer(Player):
                                     self._generate_direct_path(self.current_target, game_map)
                                 return
         
-        # Verificar entrega de pedidos
+        # Verifica entrega de pedidos
         for order in list(self.inventory):
             accessible_position = self._get_nearest_accessible_position(order.dropoff, game_map)
             
@@ -727,18 +788,16 @@ class CPUPlayer(Player):
                         completed_orders.enqueue(order)
                         self.orders_completed += 1
                         
-                        #print(f"✅ CPU ENTREGÓ pedido: {order.id} (+${earnings})")
-                        
                         self.path.clear()
                         self.current_target = None
                         return
 
-    # MANTENER TODAS LAS FUNCIONES DE UTILIDAD ORIGINALES
-
-    def _manhattan_distance(self, x1, y1, x2, y2):
-        return abs(x1 - x2) + abs(y1 - y2)
-    
     def _a_star_distance(self, start, goal, game_map):
+        """
+        Calcula la distancia usando el algoritmo A* entre dos puntos.
+        
+        Complejidad: O(n log n) donde n = número de nodos visitados
+        """
         if start == goal:
             return 0
             
@@ -752,6 +811,7 @@ class CPUPlayer(Player):
             if current == goal:
                 return g_score[current]
                 
+            # Revisa los 4 vecinos
             for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
                 neighbor = (current[0] + dx, current[1] + dy)
                 
@@ -770,29 +830,23 @@ class CPUPlayer(Player):
         
         return float('inf')
 
-    def _reconstruct_path(self, came_from, current):
-        total_path = [current]
-        
-        while current in came_from:
-            current = came_from[current]
-            total_path.append(current)
-        
-        total_path.reverse()
-        if total_path and total_path[0] == (self.grid_x, self.grid_y):
-            total_path = total_path[1:]
-        
-        self.path = deque(total_path)
-
     def _get_nearest_accessible_position(self, target_position, game_map):
+        """
+        Encuentra la posición accesible más cercana a un edificio.
+        
+        Complejidad: O(1) en promedio, O(r²) en peor caso donde r = radio de búsqueda
+        """
         if not target_position:
             return None
             
         building_x, building_y = target_position
         
+        # Si ya es accesible
         if (0 <= building_x < game_map.width and 0 <= building_y < game_map.height and
             not game_map.legend.get(game_map.tiles[building_y][building_x], {}).get("blocked", False)):
             return (building_x, building_y)
         
+        # Busca en posiciones adyacentes
         adjacent_positions = [
             (building_x + 1, building_y),
             (building_x - 1, building_y),  
@@ -818,6 +872,7 @@ class CPUPlayer(Player):
             
             return closest_pos
         
+        # Busca en radio más grande si no encuentra adyacentes
         for radius in range(2, 6):
             for dx in range(-radius, radius + 1):
                 for dy in range(-radius, radius + 1):
@@ -831,14 +886,29 @@ class CPUPlayer(Player):
                         return (pos_x, pos_y)
         
         return None
+    
+    def _manhattan_distance(self, x1, y1, x2, y2):
+        """
+        Calcula la distancia Manhattan entre dos puntos en una cuadrícula.
 
-    def draw(self, screen, camera_x=0, camera_y=0): 
-        super().draw(screen, camera_x, camera_y)
-        
-        screen_x = (self.grid_x - camera_x) * self.tile_size
-        screen_y = (self.grid_y - camera_y) * self.tile_size
-        
-        pygame.draw.circle(screen, self.cpu_color, 
-                         (int(screen_x + self.tile_size // 2), 
-                          int(screen_y + self.tile_size // 2)), 
-                         self.tile_size // 2 + 2, 2)
+        Complejidad: O(1)
+        """
+        return abs(x1 - x2) + abs(y1 - y2)
+    
+    def _reconstruct_path(self, came_from, current):
+        """
+        Reconstruye el camino desde el objetivo hasta el inicio.
+
+        Complejidad: O(n) donde n = largo del camino
+        """
+        total_path = [current]
+
+        while current in came_from:
+            current = came_from[current]
+            total_path.append(current)
+
+        total_path.reverse()
+        if total_path and total_path[0] == (self.grid_x, self.grid_y):
+            total_path = total_path[1:]
+
+        self.path = deque(total_path)
