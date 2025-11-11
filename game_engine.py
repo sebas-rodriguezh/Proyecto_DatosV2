@@ -1179,16 +1179,16 @@ class GameEngine:
 
 # Llamar este método periódicamente o con una tecla de debug
 
-if __name__ == "__main__":
-    setup_directories()
+# if __name__ == "__main__":
+#     setup_directories()
     
-    # Probar con diferentes dificultades:
-    # game = GameEngine()  # Sin CPU
-    #game = GameEngine(cpu_difficulty="easy")    # CPU fácil
-    #game = GameEngine(cpu_difficulty="medium")  # CPU medio
-    game = GameEngine(cpu_difficulty="medium")    # CPU difícil
+#     # Probar con diferentes dificultades:
+#     # game = GameEngine()  # Sin CPU
+#     #game = GameEngine(cpu_difficulty="easy")    # CPU fácil
+#     #game = GameEngine(cpu_difficulty="medium")  # CPU medio
+#     game = GameEngine(cpu_difficulty="medium")    # CPU difícil
     
 
-    #PRUEBA TEST
-        #PRUEBA TEST2
-    game.run()
+#     #PRUEBA TEST
+#         #PRUEBA TEST2
+#     game.run()
