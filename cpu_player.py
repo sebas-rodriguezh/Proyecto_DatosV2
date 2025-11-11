@@ -46,6 +46,7 @@ class CPUPlayer(Player):
         """
         Actualiza el comportamiento de la IA según la dificultad
         La idea es que este método pueda recibir por parámetro, en base a esto, se actualiza la dificultad de la IA, según el caso seleccionado por el jugador real.
+        Complejidad: O(1)
         """
         # Actualizar movimiento primero
         self.update_movement(dt, weather_system.get_stamina_consumption())
@@ -75,6 +76,7 @@ class CPUPlayer(Player):
         IA Fácil: Comportamiento aleatorio usando Random Walk
         La idea es que pueda tener un comportamiento simple, pseudo aleatorio, pero que cuando logre "llegarle" a un pedido, pueda entregarlo.
         La idea es que el agente no sea inútil o incapaz de entregar pedidos.
+        Complejidad: O(n)
         """
         # Valida si en el campo que spawmeo, hay pedidos cercanos para recoger.
         for order in active_orders:
@@ -116,6 +118,7 @@ class CPUPlayer(Player):
         """
         IA Medio: Evaluación greedy con función heurística usando α, β, γ
         Usamos el greedy por conveniencia, además utilizamos parametros α, β, γ para ponderar distintos aspectos de la evaluación.
+        Complejidad: O(n log n)
         """
         # Usamos cola de prioridad (heap) 
         options = [] #Almacena mejores opciones. 
@@ -154,6 +157,7 @@ class CPUPlayer(Player):
         """
         Evalúa una secuencia de acciones con horizonte limitado - CON α, β, γ
         Este método solo usa el nivel medio. Para cumplir con lo del score y la evaluación de múltiples acciones.
+        Complejidad: O(1)
         """
         total_score = 0
         current_pos = (self.grid_x, self.grid_y)
@@ -188,6 +192,7 @@ class CPUPlayer(Player):
         """
         Evalúa una acción única
         Es como un puente para evaluar a donde irse. 
+        Complejidad: O(1)
         """
         if action == 'pickup':
             return self._evaluate_order_pickup(order, current_time, game_map, weather_system)
@@ -247,6 +252,7 @@ class CPUPlayer(Player):
         """
         Función de evaluación para entregar pedidos - CON α, β, γ
         La misma idea que el método anterior, solo que este evalúa que tan viable es hacer la entrega. 
+        Complejidad: O(1)
         """
 
         accessible_position = self._get_nearest_accessible_position(order.dropoff, game_map)
@@ -282,6 +288,7 @@ class CPUPlayer(Player):
         IA Difícil: Optimización basada en grafos
         Hacemos uso del A* (Astar), para que el agente sea más inteligente en sus movimientos y pueda planificar mejor sus rutas.
         La idea es que la IA pueda tomar mejores decisiones que los casos anteriores. 
+        Complejidad: O(1) Porque es solo verificación y replanificación
         """
 
         # Replanificar ruta si es necesario
@@ -295,7 +302,11 @@ class CPUPlayer(Player):
     
 
     def _plan_optimal_route(self, active_orders, game_map, game_time, weather_system):
-        """Planificación de ruta óptima (nivel difícil)"""
+        """
+        Planificación de ruta óptima (nivel difícil)
+        Utiliza el algoritmo A* para planificar la ruta óptima hacia el siguiente objetivo basado en una evaluación completa de pedidos activos y entregas en inventario.
+        Complejidad: O(n × A*)
+        """
         if not active_orders and self.inventory.is_empty():
             self._exploratory_move(game_map)
             return
@@ -340,6 +351,7 @@ class CPUPlayer(Player):
         Evaluación usando distancias reales del grafo
         Traduce el mapa en un grafo para calcular distancias reales y mejorar la evaluación de acciones.
         Este mecanismo se apoya en el A* para calcular distancias reales.
+        Complejidad: O(A*)
         """
 
         if action_type == 'pickup':
@@ -381,6 +393,7 @@ class CPUPlayer(Player):
         """
         Obtiene órdenes interactuables para la CPU - similar al del jugador humano
         Detecta qué pedidos pueden ser recogidos o entregados en ese momento basado en la posición actual.
+        Complejidad: O(n log n)
         """
         interactable = []
         
@@ -440,6 +453,7 @@ class CPUPlayer(Player):
         """
         Genera camino usando algoritmo A* (nivel difícil)
         sta función implementa A* para generar y guardar en self.path el camino desde la posición actual hasta target en el grid del juego.
+        Complejidad: O(b^d) donde b = branching factor, d = profundidad del nodo objetivo
         """
         self.path.clear() #Limpia el camino previo.
         
@@ -494,6 +508,7 @@ class CPUPlayer(Player):
         Encuentra camino más corto en pasos, pero explora mucho más el área que el de A*.
         Este es utilizado por la dificultad medium para generar caminos directos.
         Las rutas que tome el medium dependen de este path generado. 
+        Compleji9dad: O(V + E) donde V = nodos, E = aristas
         """
         self.path.clear()
         

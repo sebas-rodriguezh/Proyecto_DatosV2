@@ -10,7 +10,6 @@ def show_loading_screen(screen, difficulty):
     start_time = time.time()
     loading = True
     
-    # Configurar fuentes
     try:
         font_large = pygame.font.Font(None, 48)
         font_medium = pygame.font.Font(None, 32)
@@ -23,22 +22,22 @@ def show_loading_screen(screen, difficulty):
     while loading:
         current_time = time.time() - start_time
         
-        # Manejar eventos (permitir salir durante la carga)
+        
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                return False  # Cancelar carga
+                return False  
         
-        # Dibujar fondo
+        
         screen.fill((30, 30, 60))
         
-        # Título
+        
         title = font_large.render("COURIER QUEST", True, (255, 215, 0))
         screen.blit(title, (screen.get_width() // 2 - title.get_width() // 2, 150))
         
-        # Mensaje de carga
+        
         if difficulty:
             diff_name = {
                 "easy": "FÁCIL",
@@ -53,24 +52,23 @@ def show_loading_screen(screen, difficulty):
         
         screen.blit(loading_text, (screen.get_width() // 2 - loading_text.get_width() // 2, 250))
         
-        # Animación de puntos suspensivos
+        
         dots = "." * (int(current_time * 2) % 4)
         progress_text = font_small.render(f"Cargando recursos{dots}", True, (150, 150, 150))
         screen.blit(progress_text, (screen.get_width() // 2 - progress_text.get_width() // 2, 300))
         
-        # Barra de progreso simulada
-        progress_width = min(400, (current_time * 100))  # Simula progreso
+        
+        progress_width = min(400, (current_time * 100))  
         pygame.draw.rect(screen, (100, 100, 100), (screen.get_width() // 2 - 200, 350, 400, 20))
         pygame.draw.rect(screen, (0, 200, 0), (screen.get_width() // 2 - 200, 350, progress_width, 20))
         
-        # Instrucción para cancelar
+        
         cancel_text = font_small.render("Presiona ESC para cancelar", True, (100, 100, 100))
         screen.blit(cancel_text, (screen.get_width() // 2 - cancel_text.get_width() // 2, 400))
         
         pygame.display.flip()
         
-        # Simular un tiempo mínimo de carga (opcional)
-        if current_time > 1.0:  # Mínimo 1 segundo de pantalla de carga
+        if current_time > 1.0:  
             loading = False
             
         pygame.time.delay(50)
@@ -108,27 +106,25 @@ def main():
                     cpu_difficulty = menu.cpu_difficulty
                     print(f"Iniciando juego con dificultad CPU: {cpu_difficulty}")
                     
-                    # MOSTRAR PANTALLA DE CARGA
                     continue_loading = show_loading_screen(screen, cpu_difficulty)
                     if not continue_loading:
-                        continue  # Volver al menú si se canceló
+                        continue  
                     
                 elif action and action.startswith("load_"):
                     load_slot = action[5:]  
                     cpu_difficulty = None
                     menu_running = False
                     
-                    # MOSTRAR PANTALLA DE CARGA
+                    
                     continue_loading = show_loading_screen(screen, None)
                     if not continue_loading:
-                        continue  # Volver al menú si se canceló
+                        continue  
                 
                 menu.draw()
                 pygame.display.flip()
                 clock.tick(60)
             
             from game_engine import GameEngine
-            # Pasar la dificultad al GameEngine
             game = GameEngine(load_slot=load_slot, cpu_difficulty=cpu_difficulty)
             game.run()
             
@@ -149,3 +145,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+    #Profe, cuando lo corre, y le da en iniciar nueva partida, al seleccionar el nivel de dificultad, el programa lo "devuelve" al menú principal, ya que en 
+    #en ese momento empieza a "dibujar" y cargar el mapa y toda la información. Este pantalla principal se refleja por 2-4 segundos, luego, el juego arranca y funciona normal. 

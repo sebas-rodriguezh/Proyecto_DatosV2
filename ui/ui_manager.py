@@ -135,7 +135,7 @@ class UIManager:
         self.screen.blit(earnings_text, (x_offset + 10, cpu_y_pos + 30))
         
         # Barra de stamina compacta
-        stamina_text = self.font_small.render(f"Resistencia HOLA:", True, (0, 0, 0))
+        stamina_text = self.font_small.render(f"Resistencia:", True, (0, 0, 0))
         self.screen.blit(stamina_text, (x_offset + 10, cpu_y_pos + 45))
         self.draw_bar(x_offset + 80, cpu_y_pos + 47, 60, 8, cpu_player.stamina / 100, (200, 0, 0))   
 
