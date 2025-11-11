@@ -1065,6 +1065,14 @@ class GameEngine:
         self.weather_system.draw_particles(self.screen, self.camera_x, self.camera_y)
         self.ui_manager.draw_order_markers(self.active_orders, self.player, self.camera_x, self.camera_y, self.cpu_player)
         self.player.draw(self.screen, self.camera_x, self.camera_y)
+
+        if self.cpu_player:
+            self.ui_manager.draw_cpu_stats_overlay(self.cpu_player)
+        
+        self.ui_manager.draw_order_markers(self.active_orders, self.player, self.camera_x, self.camera_y, self.cpu_player)
+        self.player.draw(self.screen, self.camera_x, self.camera_y)
+
+
         
         # Dibujar jugador CPU si existe
         if self.cpu_player:

@@ -108,37 +108,38 @@ class UIManager:
             self.draw_inventory_controls_hint()
             
         if cpu_player:
-            self.draw_cpu_status(cols, cpu_player)
+            #self.draw_cpu_status(cols, cpu_player)
+            pass
+
 
     def draw_cpu_status(self, cols, cpu_player):
-        """Dibuja el estado del jugador CPU"""
+        """Dibuja un resumen compacto del CPU en el sidebar"""
         x_offset = cols * self.game_map.tile_size
-        cpu_y_pos = self.screen_height - 120
+        cpu_y_pos = self.screen_height - 80  # Posición más arriba en el sidebar
         
-        # Título del CPU
-        cpu_title = self.font_medium.render(f"CPU ({cpu_player.difficulty}):", True, (0, 0, 0))
+        # Título compacto del CPU
+        cpu_title = self.font_small.render(f"CPU ({cpu_player.difficulty}):", True, (150, 0, 0))
         self.screen.blit(cpu_title, (x_offset + 10, cpu_y_pos))
         
-        # Estadísticas
-        stats_text = self.font_small.render(
-            f"Pedidos: {cpu_player.orders_completed} | Ganancia: ${cpu_player.total_earnings}", 
+        # Solo información resumida en el sidebar
+        compact_stats = self.font_small.render(
+            f"Completados: {cpu_player.orders_completed}", 
             True, (0, 0, 0)
         )
-        self.screen.blit(stats_text, (x_offset + 10, cpu_y_pos + 20))
+        self.screen.blit(compact_stats, (x_offset + 10, cpu_y_pos + 15))
         
-        # Estado actual
-        status_text = self.font_small.render(
-            f"Posición: ({cpu_player.grid_x}, {cpu_player.grid_y})", 
-            True, (100, 100, 100)
+        earnings_text = self.font_small.render(
+            f"Ganancia: ${cpu_player.total_earnings}", 
+            True, (0, 0, 0)
         )
-        self.screen.blit(status_text, (x_offset + 10, cpu_y_pos + 35))
+        self.screen.blit(earnings_text, (x_offset + 10, cpu_y_pos + 30))
         
-        # Barra de stamina del CPU
-        stamina_text = self.font_small.render(f"Resistencia: {int(cpu_player.stamina)}/100", True, (0, 0, 0))
-        self.screen.blit(stamina_text, (x_offset + 10, cpu_y_pos + 50))
-        self.draw_bar(x_offset + 10, cpu_y_pos + 65, 150, 10, cpu_player.stamina / 100, (200, 0, 0))
+        # Barra de stamina compacta
+        stamina_text = self.font_small.render(f"Resistencia HOLA:", True, (0, 0, 0))
+        self.screen.blit(stamina_text, (x_offset + 10, cpu_y_pos + 45))
+        self.draw_bar(x_offset + 80, cpu_y_pos + 47, 60, 8, cpu_player.stamina / 100, (200, 0, 0))   
 
-    
+
     def draw_inventory_controls_popup(self):
         """Dibuja un popup emergente con los controles de inventario en esquina inferior izquierda"""
         # Posición en esquina inferior izquierda 
@@ -211,6 +212,73 @@ class UIManager:
         
         goal_text = self.font_small.render(f" Meta: ${game_state.income_goal}", True, (0, 0, 0))
         self.screen.blit(goal_text, (x_offset + 150, 65))
+
+
+    def draw_cpu_stats_overlay(self, cpu_player):
+        """Dibuja las estadísticas del CPU Player en la esquina superior derecha - VERSIÓN FINAL"""
+        if not cpu_player:
+            return
+        
+        overlay_width = 140
+        overlay_height = 65
+        margin = 5
+        
+        # Calcular posición X (esquina superior derecha, al lado del sidebar)
+        sidebar_start_x = self.game_map.width * self.game_map.tile_size
+        overlay_x = sidebar_start_x - overlay_width - margin
+        overlay_y = margin
+        
+        # Fondo
+        overlay_rect = pygame.Rect(overlay_x, overlay_y, overlay_width, overlay_height)
+        pygame.draw.rect(self.screen, (240, 240, 240), overlay_rect)
+        pygame.draw.rect(self.screen, (200, 0, 0), overlay_rect, 1, border_radius=3)
+        
+        # Título del CPU en la parte superior
+        title_text = self.font_small.render(f"Dificultad de la IA: {cpu_player.difficulty}", True, (200, 0, 0))
+        self.screen.blit(title_text, (overlay_x + 5, overlay_y + 3))
+        
+        # PRIMERA FILA: Resistencia (ocupando todo el ancho disponible)
+        stamina_text = self.font_small.render(f"Res:", True, (0, 0, 0))
+        self.screen.blit(stamina_text, (overlay_x + 5, overlay_y + 18))
+        
+        # Barra de resistencia más larga (aprovechando espacio derecho)
+        self.draw_bar(overlay_x + 30, overlay_y + 20, 75, 8, cpu_player.stamina / 100, (0, 200, 0))
+        
+        # Valor de resistencia a la derecha de la barra CON /100
+        stamina_value = self.font_small.render(f"{int(cpu_player.stamina)}/100", True, (0, 0, 0))
+        self.screen.blit(stamina_value, (overlay_x + 110, overlay_y + 18))
+        
+        # SEGUNDA FILA: Reputación (ocupando todo el ancho disponible)
+        rep_text = self.font_small.render(f"Rep:", True, (0, 0, 0))
+        self.screen.blit(rep_text, (overlay_x + 5, overlay_y + 32))
+        
+        # Color de la barra de reputación
+        if cpu_player.reputation >= 90:
+            rep_color = (0, 200, 0)
+        elif cpu_player.reputation >= 70:
+            rep_color = (0, 150, 200)
+        elif cpu_player.reputation >= 50:
+            rep_color = (255, 150, 0)
+        else:
+            rep_color = (255, 50, 50)
+        
+        # Barra de reputación más larga (aprovechando espacio derecho)
+        self.draw_bar(overlay_x + 30, overlay_y + 34, 75, 8, cpu_player.reputation / 100, rep_color)
+        
+        # Valor de reputación a la derecha de la barra CON /100
+        rep_value = self.font_small.render(f"{cpu_player.reputation}/100", True, (0, 0, 0))
+        self.screen.blit(rep_value, (overlay_x + 110, overlay_y + 32))
+        
+        # TERCERA FILA: Estadísticas en dos columnas CON SEPARACIÓN
+        # Columna izquierda: Pedidos y Peso con separación
+        stats_text = self.font_small.render(f"Pedidos: {cpu_player.orders_completed}    Peso: {cpu_player.current_weight}/{cpu_player.max_weight}", True, (0, 0, 0))
+        self.screen.blit(stats_text, (overlay_x + 5, overlay_y + 48))
+        
+        # Columna derecha: Ganancia (en esquina inferior derecha)
+        earnings_text = self.font_small.render(f"${cpu_player.total_earnings}", True, (0, 100, 0))
+        earnings_x = overlay_x + overlay_width - earnings_text.get_width() - 5
+        self.screen.blit(earnings_text, (earnings_x, overlay_y + 48))
+
 
     def draw_player_status(self, cols, player):
         """Dibuja el estado del jugador"""
